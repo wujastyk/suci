@@ -52,6 +52,8 @@ pub struct Document {
     pub track_modification_date: bool,
     pub key_pattern: KeyPattern,
     pub owner: String,
+    /// The file started with a UTF-8 byte-order mark; keep it.
+    bom: bool,
 }
 
 /// Search index for all items, built on several threads.
@@ -97,9 +99,11 @@ impl Document {
                 e.into_bytes().iter().map(|&b| b as char).collect()
             }
         };
+        let bom = text.starts_with('\u{feff}');
         let text = text.strip_prefix('\u{feff}').map(|s| s.to_string()).unwrap_or(text);
         let lib = Library::parse(&text);
         let mut d = Document::from_library(lib, Some(path.to_path_buf()));
+        d.bom = bom;
         d.mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         d.file_dirs = FileDirs::discover(&d.lib.jabref_meta(), Some(path), file_dir_setting);
         Ok(d)
@@ -121,6 +125,7 @@ impl Document {
             track_modification_date: true,
             key_pattern: KeyPattern::Auth4Year,
             owner: String::new(),
+            bom: false,
         }
     }
 
@@ -326,7 +331,10 @@ impl Document {
         if !force && self.changed_on_disk() {
             return Err(SaveError::ChangedOnDisk);
         }
-        let text = self.lib.to_bibtex();
+        let mut text = self.lib.to_bibtex();
+        if self.bom {
+            text.insert(0, '\u{feff}');
+        }
         if path.exists() {
             let bak = PathBuf::from(format!("{}.bak", path.display()));
             let _ = std::fs::copy(&path, bak);
