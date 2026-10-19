@@ -100,6 +100,7 @@ fn clear(b: &gtk::Box) {
 
 /// Rebuild the editor for the current selection.
 pub fn rebuild(app: &Rc<App>) {
+    app.state.borrow_mut().source_buf = None;
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
     root.set_margin_top(12);
     root.set_margin_bottom(24);
@@ -270,6 +271,7 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
 
     let more = gtk::MenuButton::builder().icon_name("view-more-symbolic").tooltip_text("More actions").build();
     let menu = gio::Menu::new();
+    menu.append(Some("Edit BibTeX source (Ctrl+U)"), Some("win.toggle-source"));
     menu.append(Some("Copy BibTeX"), Some("win.copy-bibtex"));
     menu.append(Some("Copy \\cite{key}"), Some("win.copy-latex"));
     menu.append(Some("Duplicate"), Some("win.duplicate"));
@@ -279,6 +281,30 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
     more.set_menu_model(Some(&menu));
     header.append(&more);
     root.append(&header);
+
+    // ---- Fields / BibTeX switch ----
+    let show_source = app.state.borrow().show_source;
+    let switch = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    switch.add_css_class("linked");
+    switch.set_halign(gtk::Align::Start);
+    switch.set_widget_name("view-switch");
+    let fields_btn = gtk::ToggleButton::with_label("Fields");
+    let source_btn = gtk::ToggleButton::with_label("BibTeX source");
+    source_btn.set_group(Some(&fields_btn));
+    source_btn.set_tooltip_text(Some("View and edit the raw biblatex text of this entry (Ctrl+U)"));
+    fields_btn.set_active(!show_source);
+    source_btn.set_active(show_source);
+    let me = app.clone();
+    source_btn.connect_toggled(move |b| {
+        let want = b.is_active();
+        if me.state.borrow().show_source != want {
+            let me2 = me.clone();
+            glib::idle_add_local_once(move || me2.set_source_mode(want));
+        }
+    });
+    switch.append(&fields_btn);
+    switch.append(&source_btn);
+    root.append(&switch);
 
     // ---- issues for this entry ----
     let mut field_issues: HashMap<String, Vec<String>> = HashMap::new();
@@ -291,6 +317,11 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
     ib.set_widget_name("issues-box");
     fill_issues(app, &ib, &issues);
     root.append(&ib);
+
+    if show_source {
+        build_source(app, root, &e);
+        return;
+    }
 
 
     // ---- fields ----
@@ -363,11 +394,107 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
     }
 }
 
+/// Set the Fields/BibTeX toggle without triggering a switch.
+pub fn sync_view_toggle(app: &Rc<App>, source: bool) {
+    if let Some(sw) = app.w.editor_scroller.child().and_then(|r| find_named(r, "view-switch")) {
+        if let Some(src) = sw.last_child().and_downcast::<gtk::ToggleButton>() {
+            if src.is_active() != source {
+                src.set_active(source);
+            }
+        }
+        if let Some(f) = sw.first_child().and_downcast::<gtk::ToggleButton>() {
+            if f.is_active() == source {
+                f.set_active(!source);
+            }
+        }
+    }
+}
+
+/// Editable raw BibTeX of one entry.
+fn build_source(app: &Rc<App>, root: &gtk::Box, e: &Entry) {
+    let text = e.to_bibtex();
+    let tv = gtk::TextView::builder()
+        .monospace(true)
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .top_margin(8)
+        .bottom_margin(8)
+        .left_margin(8)
+        .right_margin(8)
+        .vexpand(true)
+        .build();
+    tv.add_css_class("field-text");
+    tv.buffer().set_text(&text);
+    tv.set_size_request(-1, 360);
+    let frame = gtk::Frame::new(None);
+    frame.set_child(Some(&tv));
+    frame.set_vexpand(true);
+    let status = gtk::Label::new(Some("Edit the entry directly. Changes are applied when you press Apply (Ctrl+Enter), switch back to Fields, or select another entry."));
+    status.set_wrap(true);
+    status.set_xalign(0.0);
+    status.add_css_class("dim-label");
+    status.add_css_class("caption");
+
+    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    buttons.set_halign(gtk::Align::End);
+    let revert = gtk::Button::with_label("Revert");
+    revert.set_sensitive(false);
+    let apply = gtk::Button::with_label("Apply");
+    apply.add_css_class("suggested-action");
+    apply.set_sensitive(false);
+    buttons.append(&revert);
+    buttons.append(&apply);
+
+    app.state.borrow_mut().source_buf = Some((tv.buffer(), text.clone()));
+
+    let (a2, r2) = (apply.clone(), revert.clone());
+    let me = app.clone();
+    tv.buffer().connect_changed(move |b| {
+        let cur = b.text(&b.start_iter(), &b.end_iter(), false).to_string();
+        let dirty = me.state.try_borrow().ok().and_then(|st| st.source_buf.as_ref().map(|(_, o)| *o != cur)).unwrap_or(true);
+        a2.set_sensitive(dirty);
+        r2.set_sensitive(dirty);
+    });
+    let me = app.clone();
+    let st2 = status.clone();
+    let do_apply = Rc::new(move || match me.apply_source() {
+        Ok(_) => rebuild(&me),
+        Err(err) => {
+            st2.set_text(&err);
+            st2.remove_css_class("dim-label");
+            st2.add_css_class("error");
+        }
+    });
+    let da = do_apply.clone();
+    apply.connect_clicked(move |_| da());
+    let me = app.clone();
+    revert.connect_clicked(move |_| rebuild(&me));
+    // Ctrl+Enter applies
+    let kc = gtk::EventControllerKey::new();
+    let da = do_apply.clone();
+    kc.connect_key_pressed(move |_, key, _, mods| {
+        if mods.contains(gdk::ModifierType::CONTROL_MASK) && (key == gdk::Key::Return || key == gdk::Key::KP_Enter) {
+            da();
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    });
+    tv.add_controller(kc);
+
+    root.append(&frame);
+    root.append(&status);
+    root.append(&buttons);
+    let tv2 = tv.clone();
+    glib::idle_add_local_once(move || {
+        tv2.grab_focus();
+    });
+}
+
 fn fill_issues(app: &Rc<App>, ib: &gtk::Box, issues: &[suci::checks::Issue]) {
     clear(ib);
     for i in issues.iter().filter(|i| i.severity != Severity::Info || i.fix.is_some()) {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         row.add_css_class("issue-row");
+        row.set_widget_name(&format!("issue:{}", i.message));
         let icon = gtk::Image::from_icon_name(match i.severity {
             Severity::Error => "dialog-error-symbolic",
             Severity::Warning => "dialog-warning-symbolic",
@@ -499,7 +626,11 @@ fn field_grid(
         }
         grid.attach(&label, 0, row as i32, 1, 1);
 
-        let value = pending_or(app, name, e);
+        let mut value = pending_or(app, name, e);
+        // ARK is the usual eprint type here; it is saved once an eprint is entered
+        if lname == "eprinttype" && value.trim().is_empty() {
+            value = suci::files::DEFAULT_EPRINTTYPE.to_string();
+        }
         let input: gtk::Widget = if MULTILINE.contains(&lname.as_str()) || value.chars().count() > 160 || value.contains('\n') {
             let tv = gtk::TextView::builder()
                 .wrap_mode(gtk::WrapMode::WordChar)
@@ -569,6 +700,18 @@ fn field_grid(
                 });
                 cell.append(&b);
             }
+            "eprint" if !value_trim.is_empty() => {
+                let ty = pending_or(app, "eprinttype", e);
+                if let Some(u) = suci::files::eprint_url(&value_trim, &ty) {
+                    let b = icon_button("web-browser-symbolic", &format!("Open {u}"));
+                    let me = app.clone();
+                    b.connect_clicked(move |_| me.launch_uri(&u));
+                    cell.append(&b);
+                }
+            }
+            "eprint" => {
+                en_placeholder(&input, "ark:/13960/…  (or paste an n2t.net / archive.org ARK link)");
+            }
             "url" if !value_trim.is_empty() => {
                 let b = icon_button("web-browser-symbolic", "Open in browser");
                 let me = app.clone();
@@ -609,6 +752,12 @@ fn field_grid(
         }
     }
     grid
+}
+
+fn en_placeholder(w: &gtk::Widget, text: &str) {
+    if let Some(en) = w.downcast_ref::<gtk::Entry>() {
+        en.set_placeholder_text(Some(text));
+    }
 }
 
 fn icon_button(icon: &str, tip: &str) -> gtk::Button {
@@ -712,9 +861,61 @@ pub fn refresh_header(app: &Rc<App>) {
         let st = app.state.borrow();
         st.current.map(|i| check_entry(&st.doc.lib, i, Some(&st.doc.file_dirs))).unwrap_or_default()
     };
+    // Update the warning list in place without changing its size, so the
+    // fields below don't jump while typing: solved problems are ticked off;
+    // new ones are flagged on their field label (and listed on the next visit).
     if let Some(ib) = app.w.editor_scroller.child().and_then(|r| find_named(r, "issues-box")).and_downcast::<gtk::Box>() {
-        fill_issues(app, &ib, &issues);
+        let current: std::collections::HashSet<&str> = issues.iter().map(|i| i.message.as_str()).collect();
+        let mut row = ib.first_child();
+        while let Some(r) = row {
+            if let Some(msg) = r.widget_name().strip_prefix("issue:") {
+                let solved = !current.contains(msg);
+                if let Some(icon) = r.first_child().and_downcast::<gtk::Image>() {
+                    if solved {
+                        icon.set_icon_name(Some("object-select-symbolic"));
+                        r.add_css_class("dim-label");
+                    }
+                }
+                if solved {
+                    if let Some(btn) = r.last_child().and_downcast::<gtk::Button>() {
+                        btn.set_visible(false);
+                    }
+                }
+            }
+            row = r.next_sibling();
+        }
     }
+    // show values that were tidied on commit (e.g. eprint links), without
+    // touching the field the user is typing in
+    let synced: Vec<(gtk::Entry, String, String)> = {
+        let st = app.state.borrow();
+        let e = st.current.and_then(|i| st.doc.entry(i));
+        let mut v = Vec::new();
+        if let (Some(e), Some(root)) = (e, app.w.editor_scroller.child()) {
+            let mut stack = vec![root];
+            while let Some(w) = stack.pop() {
+                if let Some(f) = w.widget_name().strip_prefix("field-") {
+                    if let Some(en) = w.downcast_ref::<gtk::Entry>() {
+                        let stored = e.get(f).unwrap_or_default();
+                        if !en.state_flags().contains(gtk::StateFlags::FOCUS_WITHIN) && !st.pending.contains_key(f) && !stored.is_empty() && en.text() != stored {
+                            v.push((en.clone(), f.to_string(), stored));
+                        }
+                    }
+                }
+                let mut c = w.first_child();
+                while let Some(ch) = c {
+                    stack.push(ch.clone());
+                    c = ch.next_sibling();
+                }
+            }
+        }
+        v
+    };
+    for (en, f, val) in synced {
+        en.set_text(&val);
+        app.state.borrow_mut().pending.remove(&f);
+    }
+
     // re-mark field labels that have problems
     let mut by_field: HashMap<String, Vec<String>> = HashMap::new();
     for i in issues.iter().filter(|i| i.severity != Severity::Info || i.fix.is_some()) {
@@ -750,7 +951,7 @@ pub fn refresh_header(app: &Rc<App>) {
         while let Some(w) = stack.pop() {
             if w.widget_name() == "key-entry" {
                 if let Some(en) = w.downcast_ref::<gtk::Entry>() {
-                    if en.text() != key && !en.has_focus() {
+                    if en.text() != key && !en.state_flags().contains(gtk::StateFlags::FOCUS_WITHIN) {
                         en.set_text(&key);
                         app.state.borrow_mut().pending_key = None;
                     }

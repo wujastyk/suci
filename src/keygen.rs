@@ -63,16 +63,17 @@ fn title_word(e: &Entry) -> String {
     String::new()
 }
 
-/// Unique key, adding a, b, c… on collision.
+/// Unique key. If `base` (e.g. `wuja-2022`) or any lettered form of it is
+/// already taken, the next letter after the highest one in use is added
+/// (`wuja-2022a`, `wuja-2022c` → `wuja-2022d`), so a letter that once
+/// belonged to another work is never reused.
 pub fn unique_key(base: &str, exists: impl Fn(&str) -> bool) -> String {
-    if !exists(base) {
-        return base.to_string();
-    }
-    for c in 'a'..='z' {
-        let k = format!("{base}{c}");
-        if !exists(&k) {
-            return k;
-        }
+    let highest = ('a'..='z').rev().find(|c| exists(&format!("{base}{c}")));
+    match highest {
+        None if !exists(base) => return base.to_string(),
+        None => return format!("{base}a"),
+        Some(c) if c < 'z' => return format!("{base}{}", (c as u8 + 1) as char),
+        Some(_) => {}
     }
     let mut n = 2;
     loop {
@@ -99,5 +100,10 @@ mod tests {
         assert_eq!(base_key(v[0], KeyPattern::Auth4Title4), "sarm-yoga");
         assert_eq!(base_key(v[1], KeyPattern::Auth4Year), "srav-2007");
         assert_eq!(unique_key("sarm-2003", |k| k == "sarm-2003" || k == "sarm-2003a"), "sarm-2003b");
+        assert_eq!(unique_key("sarm-2003", |_| false), "sarm-2003");
+        assert_eq!(unique_key("sarm-2003", |k| k == "sarm-2003"), "sarm-2003a");
+        // gaps are not refilled; the letter after the highest is used
+        assert_eq!(unique_key("wuja-2022", |k| ["wuja-2022", "wuja-2022a", "wuja-2022c"].contains(&k)), "wuja-2022d");
+        assert_eq!(unique_key("wuja-2023", |k| ["wuja-2023b", "wuja-2023f"].contains(&k)), "wuja-2023g");
     }
 }

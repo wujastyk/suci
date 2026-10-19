@@ -421,6 +421,11 @@ fn entry_issues(ctx: &Ctx, idx: usize, e: &Entry, dirs: Option<&FileDirs>, issue
                     }
                 }
             }
+            "eprint" => {
+                if e.get_nonempty("eprinttype").is_none() && v.trim().starts_with("ark:") {
+                    push(Some("eprinttype"), Severity::Info, "eprint is an ARK but eprinttype is empty".into(), Some("ark".into()));
+                }
+            }
             "pages" => {
                 if v.contains('–') || v.contains('—') || (PAGES_HYPHEN_RE.is_match(&v) && !v.contains("--")) {
                     let fixed = PAGES_HYPHEN_RE.replace_all(&v, "$1--$2").to_string();

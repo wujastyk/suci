@@ -584,6 +584,8 @@ pub fn show_shortcuts(app: &Rc<App>) {
         ("Ctrl+Shift+C", "Copy formatted reference(s) from anywhere"),
         ("Ctrl+Shift+K", "Copy citation key(s)"),
         ("Ctrl+P", "Open linked PDF"),
+        ("Ctrl+U", "Switch between fields and BibTeX source"),
+        ("Ctrl+Enter (in source)", "Apply BibTeX source edits"),
         ("Enter (in list)", "Edit the selected entry"),
         ("Delete (in list)", "Delete selected entries"),
         ("Ctrl+D (in list)", "Duplicate entry"),

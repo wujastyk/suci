@@ -16,6 +16,9 @@ pub const CANONICAL: &[&str] = &[
     "annotation", "contents",
 ];
 
+/// Fields offered for every entry type, whether or not the library uses them much.
+pub const ALWAYS: &[&str] = &["eprint", "eprinttype"];
+
 /// Housekeeping fields shown in a collapsed section.
 pub const BOOKKEEPING: &[&str] =
     &["owner", "creationdate", "modificationdate", "timestamp", "citationkey", "groups", "source", "ppn_gvk"];
@@ -140,7 +143,7 @@ pub fn layout(profile: &Profile, ty: &str, present: &[String], biblatex: bool) -
         }
         // a series number belongs with the series
         let with_series = f == "number" && main.iter().any(|m| m == "series");
-        if is_present || used || req.contains(&f) || with_series {
+        if is_present || used || req.contains(&f) || with_series || ALWAYS.contains(&f) {
             main.push(f.to_string());
         }
     }
@@ -177,7 +180,7 @@ mod tests {
         let e = lib.entries().last().unwrap();
         let present: Vec<String> = e.fields.iter().map(|f| f.name.clone()).collect();
         let l = layout(&p, "book", &present, true);
-        assert_eq!(l.main, vec!["author", "title", "series", "number", "publisher", "location", "date", "eprint"]);
+        assert_eq!(l.main, vec!["author", "title", "series", "number", "publisher", "location", "date", "eprint", "eprinttype"]);
         assert!(l.other.is_empty());
         let l = layout(&p, "book", &["owner".to_string()], true);
         assert_eq!(l.bookkeeping, vec!["owner"]);

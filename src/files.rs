@@ -196,6 +196,43 @@ pub fn jabref_main_file_directory() -> Option<PathBuf> {
     None
 }
 
+/// Default eprint type for this library (archive.org ARK identifiers).
+pub const DEFAULT_EPRINTTYPE: &str = "ark";
+
+/// "https://n2t.net/ark:/13960/t0wq6n34h" → "ark:/13960/t0wq6n34h".
+pub fn normalize_eprint(eprint: &str, eprinttype: &str) -> String {
+    let e = eprint.trim();
+    if (eprinttype.is_empty() || eprinttype.eq_ignore_ascii_case("ark")) && !e.starts_with("ark:") {
+        if let Some(i) = e.find("ark:/") {
+            return e[i..].trim_end_matches('/').to_string();
+        }
+    }
+    e.to_string()
+}
+
+/// Web address for an eprint, by type.
+pub fn eprint_url(eprint: &str, eprinttype: &str) -> Option<String> {
+    let e = eprint.trim();
+    if e.is_empty() {
+        return None;
+    }
+    if e.starts_with("http://") || e.starts_with("https://") {
+        return Some(e.to_string());
+    }
+    let t = if eprinttype.trim().is_empty() { DEFAULT_EPRINTTYPE } else { eprinttype.trim() };
+    Some(match t.to_lowercase().as_str() {
+        "ark" => format!("https://n2t.net/{e}"),
+        "archive.org" => format!("https://archive.org/details/{e}"),
+        "jstor" => format!("https://www.jstor.org/stable/{e}"),
+        "hdl" | "handle" => format!("https://hdl.handle.net/{e}"),
+        "arxiv" => format!("https://arxiv.org/abs/{e}"),
+        "googlebooks" => format!("https://books.google.com/books?id={e}"),
+        "doi" => format!("https://doi.org/{e}"),
+        "pubmed" => format!("https://pubmed.ncbi.nlm.nih.gov/{e}"),
+        _ => return None,
+    })
+}
+
 pub fn file_type_for(path: &Path) -> String {
     match path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref() {
         Some("pdf") => "PDF".into(),
@@ -213,6 +250,16 @@ pub fn file_type_for(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn eprints() {
+        assert_eq!(normalize_eprint("https://n2t.net/ark:/13960/t0wq6n34h", ""), "ark:/13960/t0wq6n34h");
+        assert_eq!(normalize_eprint("ark:/13960/t0wq6n34h", "ark"), "ark:/13960/t0wq6n34h");
+        assert_eq!(normalize_eprint("2101.00001", "arXiv"), "2101.00001");
+        assert_eq!(eprint_url("ark:/13960/t0wq6n34h", "ark").unwrap(), "https://n2t.net/ark:/13960/t0wq6n34h");
+        assert_eq!(eprint_url("602910", "jstor").unwrap(), "https://www.jstor.org/stable/602910");
+        assert_eq!(eprint_url("ark:/13960/x", "").unwrap(), "https://n2t.net/ark:/13960/x");
+    }
 
     #[test]
     fn parse_and_serialize() {

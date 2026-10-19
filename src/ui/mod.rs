@@ -59,6 +59,10 @@ pub struct State {
     /// Item indices of all selected entries.
     pub selected: Vec<usize>,
     pub has_file: bool,
+    /// Show the entry as editable BibTeX source instead of fields.
+    pub show_source: bool,
+    /// The source editor's buffer and the text it was loaded with.
+    pub source_buf: Option<(gtk::TextBuffer, String)>,
 }
 
 pub struct Widgets {
@@ -262,6 +266,8 @@ impl App {
                 pending_type: None,
                 selected: Vec::new(),
                 has_file: false,
+                show_source: false,
+                source_buf: None,
             }),
             w: Widgets {
                 window: window.clone(),
@@ -341,6 +347,10 @@ impl App {
         add("about", Box::new(|a| dialogs::show_about(a)));
         add("open-pdf", Box::new(|a| a.open_first_pdf()));
         add("duplicate", Box::new(|a| a.duplicate_selected()));
+        add("toggle-source", Box::new(|a| {
+            let on = !a.state.borrow().show_source;
+            a.set_source_mode(on);
+        }));
 
         // sort order as a stateful action
         let mode = self.state.borrow().settings.sort_mode;
@@ -375,6 +385,7 @@ impl App {
         app.set_accels_for_action("win.copy-ref", &["<Control><Shift>c"]);
         app.set_accels_for_action("win.copy-key", &["<Control><Shift>k"]);
         app.set_accels_for_action("win.paste-bibtex", &["<Control><Shift>v"]);
+        app.set_accels_for_action("win.toggle-source", &["<Control>u"]);
     }
 
     fn setup_signals(self: &Rc<Self>, new_btn: &gtk::MenuButton, _recent: &gtk::MenuButton, paned: &gtk::Paned, toast_close: &gtk::Button) {
@@ -852,7 +863,104 @@ impl App {
     // ---------- editing ----------
 
     /// Commit pending edits from the editor to the document.
+    /// Switch between the field editor and the BibTeX source editor.
+    pub fn set_source_mode(self: &Rc<Self>, on: bool) {
+        if !on {
+            // leaving the source view: apply edits, but stay if they don't parse
+            if let Err(err) = self.apply_source() {
+                self.error("The BibTeX source has an error", &format!("{err}\n\nCorrect it, or press Revert to discard your changes."));
+                editor::sync_view_toggle(self, true);
+                return;
+            }
+        } else {
+            self.flush();
+        }
+        self.state.borrow_mut().show_source = on;
+        editor::rebuild(self);
+    }
+
+    /// Apply edited BibTeX source to the current entry.
+    /// Ok(true) if the entry changed; Err with a message if the text is invalid.
+    pub fn apply_source(self: &Rc<Self>) -> Result<bool, String> {
+        let (idx, text) = {
+            let st = self.state.borrow();
+            let (Some(idx), Some((buf, orig))) = (st.current, st.source_buf.as_ref()) else { return Ok(false) };
+            let text = buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string();
+            if text == *orig {
+                return Ok(false);
+            }
+            (idx, text)
+        };
+        let lib = suci::bib::Library::parse(&text);
+        if let Some(err) = lib.errors.first() {
+            // point at the first line whose braces don't balance
+            let hint = text
+                .lines()
+                .enumerate()
+                .skip(1)
+                .find(|(_, l)| {
+                    let t = l.trim();
+                    let net = t.matches('{').count() as i32 - t.matches("\\{").count() as i32
+                        - (t.matches('}').count() as i32 - t.matches("\\}").count() as i32);
+                    net != 0 && t != "}"
+                })
+                .map(|(i, l)| format!("\n\nCheck line {}: {}", i + 1, l.trim()))
+                .unwrap_or_default();
+            let msg = if err.message.contains("not closed") || err.message.contains("unbalanced") {
+                "Unbalanced braces { } — every field value must be closed with } and followed by a comma.".to_string()
+            } else {
+                err.message.clone()
+            };
+            return Err(format!("{msg}{hint}"));
+        }
+        let entries: Vec<Entry> = lib.entries().cloned().collect();
+        let junk: String = lib
+            .items
+            .iter()
+            .filter_map(|it| if let suci::bib::Item::Junk(j) = it { Some(j.trim()) } else { None })
+            .collect();
+        let mut e = match entries.len() {
+            0 => return Err("No entry found. The text must look like @Type{key, field = {value}, …}".into()),
+            1 => entries.into_iter().next().unwrap(),
+            n => return Err(format!("Found {n} entries; only one entry can be edited here. Use “Paste BibTeX” to add new ones.")),
+        };
+        if !junk.is_empty() {
+            return Err(format!("Text outside the entry: “{}”", junk.chars().take(60).collect::<String>()));
+        }
+        if e.key.trim().is_empty() {
+            return Err("The entry has no citation key.".into());
+        }
+        e.raw = None;
+        let changed = self.state.borrow_mut().doc.update_entry(idx, e);
+        if let Some((_, orig)) = self.state.borrow_mut().source_buf.as_mut() {
+            *orig = text;
+        }
+        if changed {
+            self.needs_resort.set(true);
+            list::refresh_row(self, idx);
+            self.update_title();
+            self.refresh_citation();
+        }
+        Ok(changed)
+    }
+
     pub fn flush(self: &Rc<Self>) {
+        if self.state.try_borrow().is_ok_and(|st| st.source_buf.is_some()) {
+            match self.apply_source() {
+                Ok(_) => {}
+                Err(err) => {
+                    // keep the user's text: put it on the clipboard
+                    let text = {
+                        let st = self.state.borrow();
+                        st.source_buf.as_ref().map(|(b, _)| b.text(&b.start_iter(), &b.end_iter(), false).to_string())
+                    };
+                    if let Some(t) = text {
+                        self.w.window.clipboard().set_text(&t);
+                    }
+                    self.toast(&format!("BibTeX edit not applied ({err}). Your text is on the clipboard."), None);
+                }
+            }
+        }
         let changed = {
             let Ok(mut st) = self.state.try_borrow_mut() else { return };
             if st.pending.is_empty() && st.pending_key.is_none() && st.pending_type.is_none() {
@@ -875,6 +983,17 @@ impl App {
             }
             if let Some(t) = st.pending_type.take() {
                 e.set_type(&t);
+            }
+            // eprint: tidy pasted resolver links, default the type to "ark"
+            if let Some(ep) = e.get_nonempty("eprint") {
+                let ty = e.get("eprinttype").unwrap_or_default();
+                let norm = suci::files::normalize_eprint(&ep, &ty);
+                if norm != ep {
+                    e.set("eprint", &norm);
+                }
+                if ty.trim().is_empty() {
+                    e.set("eprinttype", suci::files::DEFAULT_EPRINTTYPE);
+                }
             }
             // provisional keys get replaced once there is enough data
             if e.key.starts_with("new-") || e.key.is_empty() {
