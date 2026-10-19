@@ -27,10 +27,23 @@ impl Ident {
     }
 }
 
-/// Recognise a DOI (bare, doi:, or doi.org URL) or an ISBN in pasted text.
+/// Recognise a DOI (bare, doi:, or doi.org URL), a shortDOI (10/abcd) or an
+/// ISBN in pasted text.
 pub fn detect(text: &str) -> Option<Ident> {
     let t = text.trim();
     let lower = t.to_lowercase();
+    let short = lower
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("dx.")
+        .trim_start_matches("doi.org/")
+        .trim_start_matches("doi:")
+        .trim();
+    if let Some(code) = short.strip_prefix("10/") {
+        if !code.is_empty() && code.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Some(Ident::Doi(format!("10/{code}")));
+        }
+    }
     if let Some(i) = lower.find("10.") {
         let cand = &t[i..];
         let doi: String = cand.chars().take_while(|c| !c.is_whitespace()).collect();
@@ -94,8 +107,70 @@ fn enc(s: &str) -> String {
     out
 }
 
+pub fn is_short_doi(doi: &str) -> bool {
+    doi.trim().to_lowercase().starts_with("10/")
+}
+
+/// Contract a DOI with the shortDOI service (https://shortdoi.org).
+/// Blocking. Returns e.g. "10/hbph7k".
+pub fn shorten_doi(doi: &str) -> Result<String, String> {
+    let doi = crate::checks::clean_doi(doi);
+    if is_short_doi(&doi) {
+        return Ok(doi);
+    }
+    let body = get(&format!("https://shortdoi.org/{}?format=json", enc(&doi)), "application/json")?;
+    let v: Value = serde_json::from_str(&body).map_err(|_| "shortdoi.org did not return a short DOI (is the DOI registered?)".to_string())?;
+    v.get("ShortDOI")
+        .and_then(|s| s.as_str())
+        .filter(|s| s.starts_with("10/"))
+        .map(|s| s.to_string())
+        .ok_or_else(|| "shortdoi.org did not return a short DOI".into())
+}
+
+/// Expand a shortDOI to the full DOI, using the DOI handle API.
+pub fn expand_short_doi(short: &str) -> Result<String, String> {
+    let body = get(&format!("https://doi.org/api/handles/{}", short.trim()), "application/json")?;
+    parse_handle_alias(&body).ok_or_else(|| format!("could not expand the short DOI {short}"))
+}
+
+fn parse_handle_alias(body: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.get("values")?.as_array()?.iter().find_map(|x| {
+        (x.get("type")?.as_str()? == "HS_ALIAS").then(|| x.get("data")?.get("value")?.as_str().map(|s| s.to_string()))?
+    })
+}
+
 /// Fetch all candidates for an identifier. Blocking; call from a worker thread.
 pub fn fetch(id: &Ident) -> (Vec<Candidate>, Vec<String>) {
+    let mut found = Vec::new();
+    let mut errors = Vec::new();
+    // a shortDOI is looked up by its full form, and kept as given
+    let mut short_given = None;
+    let expanded;
+    let id = match id {
+        Ident::Doi(d) if is_short_doi(d) => match expand_short_doi(d) {
+            Ok(full) => {
+                short_given = Some(d.clone());
+                expanded = Ident::Doi(full);
+                &expanded
+            }
+            Err(e) => return (vec![], vec![format!("doi.org: {e}")]),
+        },
+        other => other,
+    };
+    let (mut found_inner, errs) = fetch_full(id);
+    if let Some(s) = short_given {
+        for c in found_inner.iter_mut() {
+            c.entry.set("doi", &s);
+            c.entry.raw = None;
+        }
+    }
+    found.append(&mut found_inner);
+    errors.extend(errs);
+    (found, errors)
+}
+
+fn fetch_full(id: &Ident) -> (Vec<Candidate>, Vec<String>) {
     let mut found = Vec::new();
     let mut errors = Vec::new();
     match id {
@@ -859,6 +934,10 @@ mod tests {
         assert_eq!(detect("ISBN 978-81-932319-3-7"), Some(Ident::Isbn("9788193231937".into())));
         assert_eq!(detect("0-306-40615-2"), Some(Ident::Isbn("0306406152".into())));
         assert_eq!(detect("hello"), None);
+        assert_eq!(detect("10/hbph7k"), Some(Ident::Doi("10/hbph7k".into())));
+        assert_eq!(detect("https://doi.org/10/hbph7k"), Some(Ident::Doi("10/hbph7k".into())));
+        let handle = r#"{"responseCode":1,"handle":"10/hbph7k","values":[{"index":1,"type":"HS_ALIAS","data":{"format":"string","value":"10.1002/9781119144892.ch23"}}]}"#;
+        assert_eq!(parse_handle_alias(handle).unwrap(), "10.1002/9781119144892.ch23");
         assert_eq!(detect("9788193231938"), None);
     }
 

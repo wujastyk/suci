@@ -19,8 +19,12 @@ pub struct Settings {
     pub track_modification_date: bool,
     /// Store fetched data with LaTeX accents instead of Unicode.
     pub fetch_as_latex: bool,
-    /// Apply the citation style's automatic Title Case.
+    /// Capitalise English titles in formatted citations.
     pub style_title_case: bool,
+    /// Capitalise English titles when entries are added or titles edited.
+    pub auto_title_case: bool,
+    /// Store DOIs of fetched entries as shortDOIs.
+    pub short_dois: bool,
     pub window_width: i32,
     pub window_height: i32,
     pub pane_position: i32,
@@ -41,6 +45,8 @@ impl Default for Settings {
             track_modification_date: true,
             fetch_as_latex: false,
             style_title_case: false,
+            auto_title_case: false,
+            short_dois: false,
             window_width: 1400,
             window_height: 900,
             pane_position: 800,

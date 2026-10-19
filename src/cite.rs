@@ -46,9 +46,9 @@ pub fn user_style_dir() -> Option<PathBuf> {
 
 pub struct Styles {
     pub list: Vec<StyleInfo>,
-    /// Apply the style's automatic Title Case. Off by default: it mangles
-    /// non-English titles (German, French, Sanskrit…), and titles in a curated
-    /// library are usually already capitalised as wanted.
+    /// Capitalise English titles in formatted citations (with Sūcī's own
+    /// language-aware rules; the style's generic Title Case is never used,
+    /// as it mangles German, French and Sanskrit titles).
     pub title_case: bool,
     parsed: std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<IndependentStyle>>>,
     locales: Vec<Locale>,
@@ -80,10 +80,7 @@ impl Styles {
     }
 
     pub fn set_title_case(&mut self, on: bool) {
-        if self.title_case != on {
-            self.title_case = on;
-            self.parsed.borrow_mut().clear();
-        }
+        self.title_case = on;
     }
 
     fn style(&self, id: &str) -> Result<std::rc::Rc<IndependentStyle>, String> {
@@ -92,9 +89,7 @@ impl Styles {
         }
         let info = self.list.iter().find(|s| s.id == id).ok_or_else(|| format!("unknown style {id}"))?;
         let mut xml = expand_substitutes(&info.xml);
-        if !self.title_case {
-            xml = xml.replace(" text-case=\"title\"", "");
-        }
+        xml = xml.replace(" text-case=\"title\"", "");
         let st = IndependentStyle::from_xml(&xml).map_err(|e| format!("cannot read style {id}: {e} (dependent styles are not supported; use the parent style)"))?;
         let rc = std::rc::Rc::new(st);
         self.parsed.borrow_mut().insert(id.to_string(), rc.clone());
@@ -107,7 +102,10 @@ impl Styles {
         let mut map = Map::new();
         let mut keys = Vec::new();
         for e in entries {
-            let full = with_crossref(e, lookup);
+            let mut full = with_crossref(e, lookup);
+            if self.title_case && crate::titlecase::auto_applies(&full) {
+                crate::titlecase::apply(&mut full);
+            }
             let key = if e.key.is_empty() { "nokey".to_string() } else { e.key.clone() };
             map.insert(key.clone(), to_hayagriva(&full));
             keys.push(key);

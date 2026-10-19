@@ -11,3 +11,4 @@ pub mod cite;
 pub mod fetch;
 pub mod settings;
 pub mod doc;
+pub mod titlecase;

@@ -3,6 +3,7 @@
 mod dialogs;
 mod editor;
 mod list;
+mod tools;
 
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -297,6 +298,7 @@ impl App {
         list::setup_columns(&app_rc);
         app_rc.setup_actions(app);
         app_rc.setup_signals(&new_btn, &recent_btn, &paned, &toast_close);
+        app_rc.setup_list_context_menu();
         app_rc.update_recent_menu(&recent_btn);
 
         window.present();
@@ -347,6 +349,17 @@ impl App {
         add("about", Box::new(|a| dialogs::show_about(a)));
         add("open-pdf", Box::new(|a| a.open_first_pdf()));
         add("duplicate", Box::new(|a| a.duplicate_selected()));
+        add("titlecase-sel", Box::new(|a| a.titlecase_selected()));
+        add("titlecase-all", Box::new(|a| a.titlecase_library()));
+        add("shorten-doi-sel", Box::new(|a| a.shorten_selected()));
+        let tf = gio::SimpleAction::new("titlecase-field", Some(glib::VariantTy::STRING));
+        let me = self.clone();
+        tf.connect_activate(move |_, v| {
+            if let Some(f) = v.and_then(|v| v.str()) {
+                me.titlecase_field(f);
+            }
+        });
+        win.add_action(&tf);
         add("toggle-source", Box::new(|a| {
             let on = !a.state.borrow().show_source;
             a.set_source_mode(on);
@@ -972,6 +985,7 @@ impl App {
             };
             let Some(mut e) = st.doc.entry(idx).cloned() else { return };
             let pending = std::mem::take(&mut st.pending);
+            let edited_fields: Vec<String> = pending.keys().cloned().collect();
             for (f, v) in pending {
                 e.set(&f, &v);
             }
@@ -983,6 +997,19 @@ impl App {
             }
             if let Some(t) = st.pending_type.take() {
                 e.set_type(&t);
+            }
+            // capitalise edited English titles if the preference is on
+            if st.settings.auto_title_case && suci::titlecase::auto_applies(&e) {
+                for f in suci::titlecase::TITLE_FIELDS {
+                    if edited_fields.iter().any(|x| x.eq_ignore_ascii_case(f)) {
+                        if let Some(v) = e.get_nonempty(f) {
+                            let n = suci::titlecase::title_case(&v);
+                            if n != v {
+                                e.set(f, &n);
+                            }
+                        }
+                    }
+                }
             }
             // eprint: tidy pasted resolver links, default the type to "ark"
             if let Some(ep) = e.get_nonempty("eprint") {
@@ -1026,6 +1053,10 @@ impl App {
         self.refresh_citation();
     }
 
+    pub fn undo_public(self: &Rc<Self>) {
+        self.undo();
+    }
+
     fn undo(self: &Rc<Self>) {
         self.flush();
         let idxs = self.state.borrow_mut().doc.undo();
@@ -1061,9 +1092,11 @@ impl App {
         editor::focus_first_field(self);
     }
 
-    pub fn add_fetched(self: &Rc<Self>, e: Entry) -> usize {
+    pub fn add_fetched(self: &Rc<Self>, mut e: Entry) -> usize {
         self.flush();
+        self.prepare_new_entry(&mut e);
         let idx = self.state.borrow_mut().doc.add_entry(e);
+        self.after_entry_added(idx);
         self.w.search.set_text("");
         self.after_doc_change(Some(idx));
         let key = self.state.borrow().doc.entry(idx).map(|e| e.key.clone()).unwrap_or_default();
@@ -1245,6 +1278,7 @@ impl App {
                 if exists || e.key.is_empty() {
                     e.key = String::new();
                 }
+                me.prepare_new_entry(&mut e);
                 last = Some(me.state.borrow_mut().doc.add_entry(e));
             }
             me.after_doc_change(last);
@@ -1335,6 +1369,13 @@ fn main_menu() -> gio::Menu {
     conv.append(Some("Selected Entries: Unicode → LaTeX Accents"), Some("win.to-latex-sel"));
     conv.append(Some("Whole Library: LaTeX Accents → Unicode"), Some("win.to-unicode-all"));
     menu.append_submenu(Some("Diacritics"), &conv);
+    let titles = gio::Menu::new();
+    titles.append(Some("Selected Entries: Capitalise Titles (English)"), Some("win.titlecase-sel"));
+    titles.append(Some("Whole Library: Capitalise English Titles…"), Some("win.titlecase-all"));
+    menu.append_submenu(Some("Titles"), &titles);
+    let dois = gio::Menu::new();
+    dois.append(Some("Selected Entries: Shorten DOIs (shortDOI)"), Some("win.shorten-doi-sel"));
+    menu.append_submenu(Some("DOIs"), &dois);
 
     let sort = gio::Menu::new();
     sort.append(Some("Alphabetical (ā after a, ś after s)"), Some("win.sort-order::latin"));

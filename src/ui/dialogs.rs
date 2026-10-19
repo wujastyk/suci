@@ -448,7 +448,7 @@ fn issue_row(app: &Rc<App>, i: &Issue) -> gtk::Widget {
 // ---------- preferences ----------
 
 pub fn show_preferences(app: &Rc<App>) {
-    let win = dialog_window(app, "Preferences", 640, 520);
+    let win = dialog_window(app, "Preferences", 680, 760);
     let grid = gtk::Grid::builder().column_spacing(14).row_spacing(12).margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
     let mut row = 0;
     let mut add = |label: &str, w: &gtk::Widget, help: Option<&str>| {
@@ -500,19 +500,30 @@ pub fn show_preferences(app: &Rc<App>) {
     let owner = gtk::Entry::builder().text(&st.settings.owner).placeholder_text("(none)").build();
     add("Owner for new entries", owner.upcast_ref(), Some("JabRef's “owner” field. Leave empty to omit."));
 
+    let atc = gtk::Switch::builder().active(st.settings.auto_title_case).halign(gtk::Align::Start).build();
+    add(
+        "Capitalise English titles",
+        atc.upcast_ref(),
+        Some("Capitalise titles headline-style when entries are added or a title is edited. Entries tagged with another langid/language, titles with \\dev{}, \\textbengali{} or Indic script, and titles that don't look English are left alone. (Menu → Titles applies it to the whole library.)"),
+    );
+
     let tc = gtk::Switch::builder().active(st.settings.style_title_case).halign(gtk::Align::Start).build();
     add(
-        "Title Case in citations",
+        "…also in formatted citations",
         tc.upcast_ref(),
-        Some("Off: titles appear as you typed them. On: the style capitalises English-style (this also changes German, French and Sanskrit titles)."),
+        Some("Capitalise English titles in copied references without changing the stored data (same language rules)."),
     );
+
+    let sd = gtk::Switch::builder().active(st.settings.short_dois).halign(gtk::Align::Start).build();
+    add("Store short DOIs", sd.upcast_ref(), Some("When adding an entry with a DOI, replace it by its shortDOI from shortdoi.org (e.g. 10/hbph7k)."));
 
     let styles_btn = gtk::Button::with_label("Open styles folder");
     add("More citation styles", styles_btn.upcast_ref(), Some("Download .csl files from the Zotero Style Repository and put them in this folder; restart to load them."));
     drop(st);
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    content.append(&grid);
+    let sc = gtk::ScrolledWindow::builder().child(&grid).vexpand(true).hscrollbar_policy(gtk::PolicyType::Never).build();
+    content.append(&sc);
     let close = gtk::Button::with_label("Done");
     close.add_css_class("suggested-action");
     close.set_halign(gtk::Align::End);
@@ -554,6 +565,8 @@ pub fn show_preferences(app: &Rc<App>) {
             st.settings.track_modification_date = moddate.is_active();
             st.settings.owner = owner.text().trim().to_string();
             st.settings.style_title_case = tc.is_active();
+            st.settings.auto_title_case = atc.is_active();
+            st.settings.short_dois = sd.is_active();
             let s = st.settings.clone();
             st.doc.track_modification_date = s.track_modification_date;
             st.doc.key_pattern = s.key_pattern;

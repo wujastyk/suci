@@ -272,6 +272,8 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
     let more = gtk::MenuButton::builder().icon_name("view-more-symbolic").tooltip_text("More actions").build();
     let menu = gio::Menu::new();
     menu.append(Some("Edit BibTeX source (Ctrl+U)"), Some("win.toggle-source"));
+    menu.append(Some("Capitalise title (English)"), Some("win.titlecase-sel"));
+    menu.append(Some("Shorten DOI (shortDOI)"), Some("win.shorten-doi-sel"));
     menu.append(Some("Copy BibTeX"), Some("win.copy-bibtex"));
     menu.append(Some("Copy \\cite{key}"), Some("win.copy-latex"));
     menu.append(Some("Duplicate"), Some("win.duplicate"));
@@ -642,6 +644,9 @@ fn field_grid(
                 .build();
             tv.add_css_class("field-text");
             tv.buffer().set_text(&value);
+            if let Some(m) = title_menu(&lname) {
+                tv.set_extra_menu(Some(&m));
+            }
             tv.set_widget_name(&format!("field-{lname}"));
             let me = app.clone();
             let n = name.clone();
@@ -659,6 +664,9 @@ fn field_grid(
             frame.upcast()
         } else {
             let en = gtk::Entry::builder().text(&value).hexpand(true).build();
+            if let Some(m) = title_menu(&lname) {
+                en.set_extra_menu(Some(&m));
+            }
             en.set_widget_name(&format!("field-{lname}"));
             let me = app.clone();
             let n = name.clone();
@@ -688,6 +696,18 @@ fn field_grid(
                     let me = app.clone();
                     let d = suci::checks::clean_doi(&value_trim);
                     b.connect_clicked(move |_| me.launch_uri(&format!("https://doi.org/{d}")));
+                    cell.append(&b);
+                }
+                if lname == "doi" && !suci::fetch::is_short_doi(&suci::checks::clean_doi(&value_trim)) {
+                    let b = gtk::Button::builder().label("Shorten").tooltip_text("Replace with the short form from shortdoi.org (e.g. 10/hbph7k)").valign(gtk::Align::Start).build();
+                    b.add_css_class("flat");
+                    let me = app.clone();
+                    b.connect_clicked(move |_| {
+                        let cur = me.state.borrow().current;
+                        if let Some(i) = cur {
+                            me.shorten_dois(vec![i], false);
+                        }
+                    });
                     cell.append(&b);
                 }
                 let b = icon_button("folder-download-symbolic", "Fetch data for this identifier and fill in missing fields");
@@ -752,6 +772,28 @@ fn field_grid(
         }
     }
     grid
+}
+
+fn title_menu(field: &str) -> Option<gio::Menu> {
+    if !suci::titlecase::TITLE_FIELDS.contains(&field) {
+        return None;
+    }
+    let m = gio::Menu::new();
+    let item = gio::MenuItem::new(Some("Capitalise as English Title"), None);
+    item.set_action_and_target_value(Some("win.titlecase-field"), Some(&field.to_variant()));
+    m.append_item(&item);
+    Some(m)
+}
+
+/// Put a new value into a field's widget (after a programmatic change).
+pub fn set_field_widget(app: &Rc<App>, field: &str, value: &str) {
+    if let Some(w) = app.w.editor_scroller.child().and_then(|r| find_named(r, &format!("field-{field}"))) {
+        if let Some(en) = w.downcast_ref::<gtk::Entry>() {
+            en.set_text(value);
+        } else if let Some(tv) = w.downcast_ref::<gtk::TextView>() {
+            tv.buffer().set_text(value);
+        }
+    }
 }
 
 fn en_placeholder(w: &gtk::Widget, text: &str) {
