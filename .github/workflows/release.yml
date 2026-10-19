@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  linux:
     # Ubuntu 24.04 is the base of Linux Mint 22, so the package installs there.
     runs-on: ubuntu-24.04
     steps:
@@ -27,10 +27,65 @@ jobs:
         run: echo "path=$(packaging/build-deb.sh | tail -1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: suci-deb
+          name: suci-linux-deb
           path: ${{ steps.deb.outputs.path }}
-      - name: Publish release
+      - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.deb.outputs.path }}
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git zip
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            mingw-w64-ucrt-x86_64-librsvg
+            mingw-w64-ucrt-x86_64-rust
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-gcc
+      - name: Test
+        run: cargo test --release --locked
+      - name: Build self-contained folder
+        id: zip
+        run: echo "path=$(packaging/windows/bundle.sh | tail -1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: suci-windows-x64
+          path: ${{ steps.zip.outputs.path }}
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.zip.outputs.path }}
+
+  macos:
+    # Checks that Sūcī builds and passes its tests on macOS. The .app it makes
+    # depends on Homebrew's GTK, so it is kept as a build artifact only.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK 4
+        run: brew install gtk4 adwaita-icon-theme librsvg pkgconf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --release --locked
+      - name: Build app bundle
+        run: packaging/macos/make-app.sh
+      - name: Zip app
+        run: cd target/macos && zip -qry Suci-macos.zip Suci.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: suci-macos-app
+          path: target/macos/Suci-macos.zip

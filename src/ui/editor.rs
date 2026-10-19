@@ -474,7 +474,8 @@ fn build_source(app: &Rc<App>, root: &gtk::Box, e: &Entry) {
     let kc = gtk::EventControllerKey::new();
     let da = do_apply.clone();
     kc.connect_key_pressed(move |_, key, _, mods| {
-        if mods.contains(gdk::ModifierType::CONTROL_MASK) && (key == gdk::Key::Return || key == gdk::Key::KP_Enter) {
+        let primary = mods.contains(gdk::ModifierType::CONTROL_MASK) || mods.contains(gdk::ModifierType::META_MASK);
+        if primary && (key == gdk::Key::Return || key == gdk::Key::KP_Enter) {
             da();
             return glib::Propagation::Stop;
         }

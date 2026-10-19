@@ -1,7 +1,7 @@
 # Sūcī — a fast BibTeX / biblatex manager
 
 *Sūcī* (Skt. सूची, “list, index”; also “needle”) is a bibliography manager for
-Linux written in Rust and GTK 4. It reads and writes the same `.bib` files as
+Linux, macOS and Windows, written in Rust and GTK 4. It reads and writes the same `.bib` files as
 JabRef, so you can switch between the two freely.
 
 It was written for humanities work on South Asia: IAST diacritics, Sanskrit
@@ -32,33 +32,40 @@ citation styles used in the humanities.
 
 Not (yet) included: JabRef groups, full-text PDF search, Word/LibreOffice integration (by design).
 
-## Install on Linux Mint 22 / Ubuntu 24.04
+## Install
 
-Download the latest `suci_…_amd64.deb` from the **Releases** page and double-click it, or:
-
-```sh
-sudo apt install ./suci_0.1.0_amd64.deb
-```
-
+**Linux Mint 22 / Ubuntu 24.04:** download the latest `suci_…_amd64.deb` from the
+**Releases** page and double-click it, or `sudo apt install ./suci_*_amd64.deb`.
 Then start **Sūcī** from the menu, or run `suci path/to/library.bib`.
-It reopens the last library on the next start.
+
+**Windows 10/11:** download `suci-…-windows-x64.zip` from **Releases**, unzip it
+anywhere, and start **Suci.bat**.
+
+**macOS:** build it yourself, see below. It takes about ten minutes, mostly waiting.
+
+Sūcī reopens the last library on the next start.
 
 ## Build from source
 
+Short version, for any system that has Rust and the GTK 4 development files:
+
 ```sh
-sudo apt install libgtk-4-dev build-essential
-curl https://sh.rustup.rs -sSf | sh     # Rust toolchain
+git clone https://github.com/wujastyk/suci.git
+cd suci
 cargo build --release
 ./target/release/suci library.bib
-packaging/build-deb.sh                   # makes target/deb/suci_*.deb
 ```
+
+**Step-by-step instructions for Linux, macOS and Windows are in
+[BUILDING.md](BUILDING.md)**, including how to make a Linux `.deb`, a macOS
+`.app`, and a self-contained Windows folder.
 
 `suci --check library.bib` prints the integrity report in the terminal.
 
 ## Files
 
-- Settings: `~/.config/suci/settings.json`
-- Extra citation styles: `~/.config/suci/styles/*.csl`
+- Settings: `~/.config/suci/settings.json` on Linux, `~/Library/Application Support/suci/` on macOS, `%APPDATA%\suci\` on Windows
+- Extra citation styles: a `styles` folder beside the settings file (*Preferences → Open styles folder*)
 
 ## Licence
 

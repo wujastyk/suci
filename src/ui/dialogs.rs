@@ -475,7 +475,7 @@ pub fn show_preferences(app: &Rc<App>) {
 
     // PDF folder
     let dir_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    let dir_entry = gtk::Entry::builder().text(&st.settings.file_directory).hexpand(true).placeholder_text("e.g. /home/you/Documents/PDFs").build();
+    let dir_entry = gtk::Entry::builder().text(&st.settings.file_directory).hexpand(true).placeholder_text(if cfg!(windows) { "e.g. C:\\Users\\you\\Documents\\PDFs" } else { "e.g. /home/you/Documents/PDFs" }).build();
     let dir_btn = gtk::Button::with_label("Choose…");
     dir_row.append(&dir_entry);
     dir_row.append(&dir_btn);
@@ -549,7 +549,7 @@ pub fn show_preferences(app: &Rc<App>) {
     styles_btn.connect_clicked(move |_| {
         if let Some(d) = suci::cite::user_style_dir() {
             let _ = std::fs::create_dir_all(&d);
-            me.launch_uri(&format!("file://{}", d.display()));
+            me.launch_file(&d);
         }
     });
     let me = app.clone();

@@ -112,7 +112,7 @@ impl FileDirs {
             }
         };
         // user-specific JabRef entries first: fileDirectory-<user>-<host>
-        let user = std::env::var("USER").unwrap_or_default();
+        let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();
         for (k, v) in meta {
             if k.starts_with("fileDirectory-") && k.contains(&user) && !v.is_empty() {
                 dirs.push(resolve(v));
@@ -169,9 +169,22 @@ impl FileDirs {
     }
 }
 
-/// JabRef stores its preferences with Java's Preferences API, which on Linux
-/// writes ~/.java/.userPrefs/org/jabref/prefs.xml.
+/// JabRef's main PDF folder ("fileDirectory"), read from where Java's
+/// Preferences API keeps it on each system:
+/// * Linux: ~/.java/.userPrefs/org/jabref/prefs.xml (also Flatpak and Snap)
+/// * macOS: ~/Library/Preferences/com.apple.java.util.prefs.plist
+/// * Windows: registry HKCU\Software\JavaSoft\Prefs\org\jabref
 pub fn jabref_main_file_directory() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        return jabref_dir_macos();
+    }
+    if cfg!(windows) {
+        return jabref_dir_windows();
+    }
+    jabref_dir_linux()
+}
+
+fn jabref_dir_linux() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     // regular install, Flatpak, Snap
     for rel in [
@@ -180,20 +193,108 @@ pub fn jabref_main_file_directory() -> Option<PathBuf> {
         "snap/jabref/current/.java/.userPrefs/org/jabref/prefs.xml",
     ] {
         let Ok(xml) = std::fs::read_to_string(home.join(rel)) else { continue };
-        for key in ["fileDirectory"] {
-            let pat = format!("key=\"{key}\" value=\"");
-            if let Some(i) = xml.find(&pat) {
-                let rest = &xml[i + pat.len()..];
-                if let Some(j) = rest.find('"') {
-                    let v = rest[..j].replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
-                    if !v.is_empty() {
-                        return Some(PathBuf::from(v));
-                    }
+        let pat = "key=\"fileDirectory\" value=\"";
+        if let Some(i) = xml.find(pat) {
+            let rest = &xml[i + pat.len()..];
+            if let Some(j) = rest.find('"') {
+                let v = rest[..j].replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
+                if !v.is_empty() {
+                    return Some(PathBuf::from(v));
                 }
             }
         }
     }
     None
+}
+
+fn jabref_dir_macos() -> Option<PathBuf> {
+    let p = dirs::home_dir()?.join("Library/Preferences/com.apple.java.util.prefs.plist");
+    let v = plist::Value::from_file(p).ok()?;
+    find_in_plist(&v, false).map(PathBuf::from)
+}
+
+/// Java nests preference nodes as dictionaries ("/" → "org/" → "jabref/" …).
+fn find_in_plist(v: &plist::Value, in_jabref: bool) -> Option<String> {
+    let d = v.as_dictionary()?;
+    if in_jabref {
+        if let Some(s) = d.get("fileDirectory").and_then(|x| x.as_string()) {
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    for (k, child) in d {
+        if let Some(found) = find_in_plist(child, in_jabref || k.contains("jabref")) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn jabref_dir_windows() -> Option<PathBuf> {
+    for key in [r"HKCU\Software\JavaSoft\Prefs\org\jabref", r"HKCU\Software\JavaSoft\Prefs\org\jabref\gui"] {
+        let mut cmd = std::process::Command::new("reg");
+        cmd.args(["query", key, "/v", "file/Directory"]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let Ok(out) = cmd.output() else { continue };
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            if let Some((_, val)) = line.split_once("REG_SZ") {
+                let v = decode_java_registry(val.trim());
+                if !v.is_empty() {
+                    return Some(PathBuf::from(v));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Undo Java's registry escaping: "/X" = capital X, "//" = "\", "\" = "/",
+/// "/uXXXX" = Unicode character.
+pub fn decode_java_registry(s: &str) -> String {
+    let c: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < c.len() {
+        match c[i] {
+            '/' if i + 1 < c.len() => {
+                let n = c[i + 1];
+                if n == '/' {
+                    out.push('\\');
+                    i += 2;
+                } else if n == 'u' && i + 6 <= c.len() {
+                    let hex: String = c[i + 2..i + 6].iter().collect();
+                    match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                        Some(ch) => {
+                            out.push(ch);
+                            i += 6;
+                        }
+                        None => {
+                            out.push('u');
+                            i += 2;
+                        }
+                    }
+                } else {
+                    out.push(n);
+                    i += 2;
+                }
+            }
+            '\\' => {
+                out.push('/');
+                i += 1;
+            }
+            ch => {
+                out.push(ch);
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 /// Default eprint type for this library (archive.org ARK identifiers).
@@ -250,6 +351,19 @@ pub fn file_type_for(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn java_prefs_decoding() {
+        assert_eq!(decode_java_registry("/C:///Users///Dom///P/D/Fs"), "C:\\Users\\Dom\\PDFs");
+        assert_eq!(decode_java_registry("/C:///Users///Dom///Documents///Sanskrit/u0101"), "C:\\Users\\Dom\\Documents\\Sanskritā");
+        let mut root = plist::Dictionary::new();
+        let mut org = plist::Dictionary::new();
+        let mut jab = plist::Dictionary::new();
+        jab.insert("fileDirectory".into(), plist::Value::String("/Users/dom/PDFs".into()));
+        org.insert("jabref/".into(), plist::Value::Dictionary(jab));
+        root.insert("/org/".into(), plist::Value::Dictionary(org));
+        assert_eq!(find_in_plist(&plist::Value::Dictionary(root), false).unwrap(), "/Users/dom/PDFs");
+    }
 
     #[test]
     fn eprints() {

@@ -385,20 +385,20 @@ impl App {
         });
         win.add_action(&sort_action);
 
-        app.set_accels_for_action("win.open", &["<Control>o"]);
-        app.set_accels_for_action("win.save", &["<Control>s"]);
-        app.set_accels_for_action("win.save-as", &["<Control><Shift>s"]);
-        app.set_accels_for_action("win.search", &["<Control>f"]);
-        app.set_accels_for_action("win.fetch", &["<Control>l"]);
-        app.set_accels_for_action("win.new-entry", &["<Control>n"]);
+        app.set_accels_for_action("win.open", &["<Primary>o"]);
+        app.set_accels_for_action("win.save", &["<Primary>s"]);
+        app.set_accels_for_action("win.save-as", &["<Primary><Shift>s"]);
+        app.set_accels_for_action("win.search", &["<Primary>f"]);
+        app.set_accels_for_action("win.fetch", &["<Primary>l"]);
+        app.set_accels_for_action("win.new-entry", &["<Primary>n"]);
         app.set_accels_for_action("win.check", &["F7"]);
-        app.set_accels_for_action("win.shortcuts", &["<Control>question", "F1"]);
-        app.set_accels_for_action("win.prefs", &["<Control>comma"]);
-        app.set_accels_for_action("win.open-pdf", &["<Control>p"]);
-        app.set_accels_for_action("win.copy-ref", &["<Control><Shift>c"]);
-        app.set_accels_for_action("win.copy-key", &["<Control><Shift>k"]);
-        app.set_accels_for_action("win.paste-bibtex", &["<Control><Shift>v"]);
-        app.set_accels_for_action("win.toggle-source", &["<Control>u"]);
+        app.set_accels_for_action("win.shortcuts", &["<Primary>question", "F1"]);
+        app.set_accels_for_action("win.prefs", &["<Primary>comma"]);
+        app.set_accels_for_action("win.open-pdf", &["<Primary>p"]);
+        app.set_accels_for_action("win.copy-ref", &["<Primary><Shift>c"]);
+        app.set_accels_for_action("win.copy-key", &["<Primary><Shift>k"]);
+        app.set_accels_for_action("win.paste-bibtex", &["<Primary><Shift>v"]);
+        app.set_accels_for_action("win.toggle-source", &["<Primary>u"]);
     }
 
     fn setup_signals(self: &Rc<Self>, new_btn: &gtk::MenuButton, _recent: &gtk::MenuButton, paned: &gtk::Paned, toast_close: &gtk::Button) {
@@ -515,18 +515,18 @@ impl App {
                 Some(gtk::NamedAction::new(action)),
             ));
         };
-        add_sc("<Control>c", "win.copy-ref");
+        add_sc("<Primary>c", "win.copy-ref");
         add_sc("Delete", "win.delete");
-        add_sc("<Control>z", "win.undo");
-        add_sc("<Control><Shift>z|<Control>y", "win.redo");
-        add_sc("<Control>d", "win.duplicate");
+        add_sc("<Primary>z", "win.undo");
+        add_sc("<Primary><Shift>z|<Primary>y", "win.redo");
+        add_sc("<Primary>d", "win.duplicate");
         self.w.view.add_controller(sc);
         // the same undo/redo shortcuts in the editor when no text field handles them
         let sc2 = gtk::ShortcutController::new();
         sc2.set_propagation_phase(gtk::PropagationPhase::Bubble);
-        sc2.add_shortcut(gtk::Shortcut::new(gtk::ShortcutTrigger::parse_string("<Control>z"), Some(gtk::NamedAction::new("win.undo"))));
+        sc2.add_shortcut(gtk::Shortcut::new(gtk::ShortcutTrigger::parse_string("<Primary>z"), Some(gtk::NamedAction::new("win.undo"))));
         sc2.add_shortcut(gtk::Shortcut::new(
-            gtk::ShortcutTrigger::parse_string("<Control><Shift>z|<Control>y"),
+            gtk::ShortcutTrigger::parse_string("<Primary><Shift>z|<Primary>y"),
             Some(gtk::NamedAction::new("win.redo")),
         ));
         self.w.window.add_controller(sc2);
