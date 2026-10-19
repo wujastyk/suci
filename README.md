@@ -8,6 +8,11 @@ It was written for humanities work on South Asia: IAST diacritics, Sanskrit
 alphabetical order, union-catalogue lookup for Indian and European books, and
 citation styles used in the humanities.
 
+
+<img width="1929" height="1073" alt="image" src="https://github.com/user-attachments/assets/18e7cf31-81b5-460b-8e83-b135da75a0ce" />
+
+
+
 ## What it does
 
 - **Opens big libraries instantly.** A 6,700-entry, 4.6 MB library loads in about a quarter of a second, using a fraction of JabRef's memory.
@@ -32,13 +37,17 @@ citation styles used in the humanities.
 
 Not (yet) included: JabRef groups, full-text PDF search, Word/LibreOffice integration (by design).
 
+## Github repository
+
+[https://github.com/wujastyk/suci](https://github.com/wujastyk/suci)
+
 ## Install
 
 **Linux Mint 22 / Ubuntu 24.04:** download the latest `suci_…_amd64.deb` from the
-**Releases** page and double-click it, or `sudo apt install ./suci_*_amd64.deb`.
+**[Releases](https://github.com/wujastyk/suci/releases)** page and double-click it, or `sudo apt install ./suci_*_amd64.deb`.
 Then start **Sūcī** from the menu, or run `suci path/to/library.bib`.
 
-**Windows 10/11:** download `suci-…-windows-x64.zip` from **Releases**, unzip it
+**Windows 10/11:** download `suci-…-windows-x64.zip` from **[Releases](https://github.com/wujastyk/suci/releases)**, unzip it
 anywhere, and start **Suci.bat**.
 
 **macOS:** build it yourself, see below. It takes about ten minutes, mostly waiting.
