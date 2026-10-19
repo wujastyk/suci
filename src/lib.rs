@@ -8,3 +8,6 @@ pub mod keygen;
 pub mod profile;
 pub mod checks;
 pub mod cite;
+pub mod fetch;
+pub mod settings;
+pub mod doc;

@@ -37,7 +37,8 @@ pub struct Issue {
     pub fix: Option<String>,
 }
 
-static DOI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^10\.\d{4,9}/\S+$").unwrap());
+/// Full DOIs, plus shortDOIs (`10/abcd`).
+static DOI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^10\.\d{4,9}/\S+$|^10/[a-z0-9]+$").unwrap());
 static DOI_URL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^\s*(?:https?://)?(?:dx\.)?doi\.org/|^\s*doi:\s*").unwrap());
 static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -122,6 +123,15 @@ pub fn clean_doi(s: &str) -> String {
     DOI_URL_RE.replace(s.trim(), "").trim().to_string()
 }
 
+/// Entry types that are parts of a larger work.
+fn is_part_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "incollection" | "inbook" | "inproceedings" | "inreference" | "bookinbook" | "suppbook" | "suppcollection"
+            | "article" | "review" | "suppperiodical"
+    )
+}
+
 fn alias_value<'a>(e: &'a Entry, field: &str) -> Option<String> {
     e.get_nonempty(field)
 }
@@ -199,6 +209,8 @@ pub fn check(lib: &Library, dirs: Option<&FileDirs>) -> Vec<Issue> {
         }
 
         // required fields
+        // fields required by a custom JabRef type definition are reported as suggestions
+        let custom = custom_req.contains_key(&ty);
         let req: Vec<String> = custom_req
             .get(&ty)
             .cloned()
@@ -213,7 +225,8 @@ pub fn check(lib: &Library, dirs: Option<&FileDirs>) -> Vec<Issue> {
             });
             if !have {
                 let label = alts.join(" or ");
-                push(Some(alts[0]), Severity::Warning, format!("Missing required field: {label}"), None);
+                let sev = if custom { Severity::Info } else { Severity::Warning };
+                push(Some(alts[0]), sev, format!("Missing required field: {label}"), None);
             }
         }
 
@@ -265,12 +278,18 @@ pub fn check(lib: &Library, dirs: Option<&FileDirs>) -> Vec<Issue> {
                         if !isbn_valid(&i) {
                             push(Some(&f.name), Severity::Warning, format!("ISBN {i} has an invalid check digit"), None);
                         } else if let Some(c) = isbn13(&i) {
-                            isbns.entry(c).or_default().push(idx);
+                            // chapters legitimately share their book's ISBN
+                            if !is_part_type(&ty) {
+                                isbns.entry(c).or_default().push(idx);
+                            }
                         }
                     }
                 }
                 "issn" => {
-                    for part in v.split(|c: char| c == ';' || c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()) {
+                    for part in v
+                        .split(|c: char| c == ';' || c == ',' || c.is_whitespace())
+                        .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("issn") && !s.eq_ignore_ascii_case("issn:"))
+                    {
                         if !issn_valid(part) {
                             push(Some(&f.name), Severity::Info, format!("ISSN {part} has an invalid check digit"), None);
                         }

@@ -250,6 +250,8 @@ pub enum Item {
     Special { kind: String, body: String, raw: String },
     /// Anything between entries (whitespace, stray text); written back verbatim.
     Junk(String),
+    /// A deleted entry's slot (kept so that item indices stay stable).
+    Deleted,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -272,8 +274,20 @@ impl Library {
 
     pub fn to_bibtex(&self) -> String {
         let mut out = String::with_capacity(self.items.len() * 600);
+        let mut skip_ws_junk = false;
         for (i, it) in self.items.iter().enumerate() {
+            if skip_ws_junk {
+                skip_ws_junk = false;
+                if let Item::Junk(j) = it {
+                    if j.trim().is_empty() {
+                        continue;
+                    }
+                }
+            }
             match it {
+                Item::Deleted => {
+                    skip_ws_junk = true;
+                }
                 Item::Entry(e) => {
                     let modified = e.raw.is_none();
                     out.push_str(&e.to_bibtex());
