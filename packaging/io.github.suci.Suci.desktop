@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Sūcī
+GenericName=Bibliography Manager
+Comment=Fast BibTeX / biblatex manager with DOI and ISBN lookup
+Exec=suci %f
+Icon=io.github.suci.Suci
+Terminal=false
+Categories=Office;Education;Science;
+MimeType=text/x-bibtex;
+Keywords=bibtex;biblatex;bibliography;citation;jabref;latex;references;
+StartupNotify=true
+StartupWMClass=suci

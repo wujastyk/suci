@@ -173,9 +173,14 @@ impl FileDirs {
 /// writes ~/.java/.userPrefs/org/jabref/prefs.xml.
 pub fn jabref_main_file_directory() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    for rel in [".java/.userPrefs/org/jabref/prefs.xml", ".java/.userPrefs/org/jabref/gui/prefs.xml"] {
+    // regular install, Flatpak, Snap
+    for rel in [
+        ".java/.userPrefs/org/jabref/prefs.xml",
+        ".var/app/org.jabref.jabref/.java/.userPrefs/org/jabref/prefs.xml",
+        "snap/jabref/current/.java/.userPrefs/org/jabref/prefs.xml",
+    ] {
         let Ok(xml) = std::fs::read_to_string(home.join(rel)) else { continue };
-        for key in ["fileDirectory", "mainFileDirectory"] {
+        for key in ["fileDirectory"] {
             let pat = format!("key=\"{key}\" value=\"");
             if let Some(i) = xml.find(&pat) {
                 let rest = &xml[i + pat.len()..];

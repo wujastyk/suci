@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f4fa0"/>
+      <stop offset="1" stop-color="#2c3878"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#bg)"/>
+  <!-- index cards -->
+  <rect x="30" y="30" width="62" height="74" rx="6" fill="#ffffff" opacity="0.35"/>
+  <rect x="36" y="24" width="62" height="74" rx="6" fill="#ffffff"/>
+  <rect x="46" y="40" width="42" height="5" rx="2.5" fill="#3f4fa0"/>
+  <rect x="46" y="53" width="34" height="5" rx="2.5" fill="#9aa3cf"/>
+  <rect x="46" y="66" width="38" height="5" rx="2.5" fill="#9aa3cf"/>
+  <rect x="46" y="79" width="28" height="5" rx="2.5" fill="#9aa3cf"/>
+  <!-- needle (sūcī) -->
+  <g transform="rotate(-38 92 92)">
+    <rect x="58" y="89" width="58" height="6" rx="3" fill="#f2b632"/>
+    <ellipse cx="108" cy="92" rx="4.5" ry="1.4" fill="#2c3878"/>
+    <path d="M58 89 L46 92 L58 95 Z" fill="#f2b632"/>
+  </g>
+</svg>

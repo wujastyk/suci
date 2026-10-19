@@ -434,7 +434,13 @@ fn decode(s: &str, mode: Mode) -> String {
 
 /// Readable Unicode text from a raw LaTeX value.
 pub fn to_plain(s: &str) -> String {
-    if !s.contains(['\\', '{', '}', '~', '-', '`', '\'', '$', '\n']) {
+    let needs_work = s.contains(['\\', '{', '}', '~', '$', '\n', '\r', '\t'])
+        || s.contains("--")
+        || s.contains("``")
+        || s.contains("''")
+        || s.contains("  ")
+        || !s.is_ascii() && !unicode_normalization::is_nfc(s);
+    if !needs_work {
         return s.trim().to_string();
     }
     decode(s, Mode::Plain)

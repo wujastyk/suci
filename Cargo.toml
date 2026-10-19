@@ -3,9 +3,17 @@ name = "suci"
 version = "0.1.0"
 edition = "2024"
 
+description = "Fast BibTeX / biblatex bibliography manager"
+license = "MIT"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+
 [dependencies]
 biblatex = "0.12.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+ciborium = "0.2"
 dirs = "7.0.0"
 gtk = { version = "0.11.5", package = "gtk4", features = ["v4_14"] }
 hayagriva = "0.10.1"

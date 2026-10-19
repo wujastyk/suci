@@ -76,7 +76,7 @@ impl Styles {
                 }
             }
         }
-        Styles { list, title_case: false, parsed: Default::default(), locales: hayagriva::archive::locales() }
+        Styles { list, title_case: false, parsed: Default::default(), locales: english_locales() }
     }
 
     pub fn set_title_case(&mut self, on: bool) {
@@ -201,6 +201,23 @@ fn simplify_numbers(v: Value) -> Value {
         ),
         other => other,
     }
+}
+
+/// Only the English locales (the styles' terms: "edited by", "eds", "n.d.").
+/// Decoding all ~60 bundled locales would cost memory for nothing.
+fn english_locales() -> Vec<Locale> {
+    let mut out: Vec<Locale> = hayagriva::archive::LOCALES
+        .iter()
+        .filter(|b| {
+            let b: &[u8] = b;
+            b.windows(5).any(|w| w == b"en-US" || w == b"en-GB")
+        })
+        .filter_map(|b| ciborium::from_reader::<Locale, _>(*b).ok())
+        .collect();
+    if out.is_empty() {
+        out = hayagriva::archive::locales();
+    }
+    out
 }
 
 fn csl_title(xml: &str) -> String {

@@ -54,6 +54,24 @@ pub struct Document {
     pub owner: String,
 }
 
+/// Search index for all items, built on several threads.
+fn build_index(lib: &Library) -> Vec<Option<SearchIndex>> {
+    let items = &lib.items;
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 8);
+    let chunk = items.len().div_ceil(threads).max(1);
+    std::thread::scope(|s| {
+        let handles: Vec<_> = items
+            .chunks(chunk)
+            .map(|part| {
+                s.spawn(move || {
+                    part.iter().map(|it| if let Item::Entry(e) = it { Some(SearchIndex::build(e)) } else { None }).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    })
+}
+
 pub fn now_stamp() -> String {
     chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
 }
@@ -88,7 +106,7 @@ impl Document {
     }
 
     fn from_library(lib: Library, path: Option<PathBuf>) -> Document {
-        let index = lib.items.iter().map(|it| if let Item::Entry(e) = it { Some(SearchIndex::build(e)) } else { None }).collect();
+        let index = build_index(&lib);
         let profile = Profile::build(&lib);
         Document {
             path,
@@ -333,7 +351,7 @@ impl Document {
 
     /// Reload search data after external edits to many entries.
     pub fn rebuild(&mut self) {
-        self.index = self.lib.items.iter().map(|it| if let Item::Entry(e) = it { Some(SearchIndex::build(e)) } else { None }).collect();
+        self.index = build_index(&self.lib);
         self.profile = Profile::build(&self.lib);
     }
 

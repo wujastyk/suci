@@ -43,7 +43,7 @@ impl Default for Settings {
             style_title_case: false,
             window_width: 1400,
             window_height: 900,
-            pane_position: 640,
+            pane_position: 800,
             owner: String::new(),
             font_scale: 1.0,
         }

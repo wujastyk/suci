@@ -10,12 +10,15 @@ fn is_mark(c: char) -> bool {
 /// "Śābdabodha" → "sabdabodha", "ʿAqāʾid" → "aqaid".
 pub fn fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    for c in s.nfd() {
-        if is_mark(c) {
+    for c in s.chars() {
+        if c.is_ascii() {
+            if c != '\'' {
+                out.push(c.to_ascii_lowercase());
+            }
             continue;
         }
         match c {
-            'ʿ' | 'ʾ' | 'ʼ' | 'ʽ' | '\u{2018}' | '\u{2019}' | '\'' => {}
+            'ʿ' | 'ʾ' | 'ʼ' | 'ʽ' | '\u{2018}' | '\u{2019}' => {}
             'ł' | 'Ł' => out.push('l'),
             'ø' | 'Ø' => out.push('o'),
             'æ' | 'Æ' => out.push_str("ae"),
@@ -26,10 +29,15 @@ pub fn fold(s: &str) -> String {
             'þ' | 'Þ' => out.push_str("th"),
             '\u{00A0}' | '\u{2009}' => out.push(' '),
             '–' | '—' => out.push('-'),
+            c if is_mark(c) => {}
             c => {
-                for l in c.to_lowercase() {
-                    out.push(l);
-                }
+                unicode_normalization::char::decompose_canonical(c, |d| {
+                    if !is_mark(d) {
+                        for l in d.to_lowercase() {
+                            out.push(l);
+                        }
+                    }
+                });
             }
         }
     }
@@ -39,6 +47,17 @@ pub fn fold(s: &str) -> String {
 /// Sort key: alphabetical ignoring diacritics, with the diacritic form as a
 /// tie-breaker, so a < ā < b and s < ś < ṣ < t.
 pub fn latin_key(s: &str) -> String {
+    if s.is_ascii() {
+        let mut k = String::with_capacity(s.len() * 2 + 1);
+        for b in s.bytes() {
+            if b.is_ascii_alphanumeric() || b == b' ' {
+                k.push(b.to_ascii_lowercase() as char);
+            }
+        }
+        k.push('\u{1}');
+        k.push_str(&s.to_ascii_lowercase());
+        return k;
+    }
     let f = fold(s);
     let mut k = String::with_capacity(f.len() * 2 + 2);
     for c in f.chars() {

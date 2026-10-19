@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 /// Scholarly reading order for fields.
 pub const CANONICAL: &[&str] = &[
-    "author", "editor", "translator", "bookauthor", "title", "subtitle", "titleaddon", "booktitle",
-    "booksubtitle", "maintitle", "journaltitle", "journal", "issuetitle", "series", "number", "volume",
+    "author", "bookauthor", "title", "subtitle", "titleaddon", "booktitle", "booksubtitle", "maintitle",
+    "editor", "translator", "journaltitle", "journal", "issuetitle", "series", "number", "volume",
     "volumes", "edition", "part", "chapter", "pages", "pagetotal", "publisher", "location", "address",
     "institution", "school", "organization", "type", "date", "year", "month", "origdate", "origlanguage",
     "langid", "language", "isbn", "issn", "doi", "url", "urldate", "eprint", "eprinttype", "crossref",
@@ -112,7 +112,7 @@ pub struct Layout {
 }
 
 /// Fields used in at least this share of a type's entries get a slot.
-pub const SLOT_THRESHOLD: f64 = 0.12;
+pub const SLOT_THRESHOLD: f64 = 0.15;
 
 pub fn layout(profile: &Profile, ty: &str, present: &[String], biblatex: bool) -> Layout {
     let ty = ty.to_lowercase();
@@ -138,7 +138,9 @@ pub fn layout(profile: &Profile, ty: &str, present: &[String], biblatex: bool) -
         if alias_dup {
             continue;
         }
-        if is_present || used || req.contains(&f) {
+        // a series number belongs with the series
+        let with_series = f == "number" && main.iter().any(|m| m == "series");
+        if is_present || used || req.contains(&f) || with_series {
             main.push(f.to_string());
         }
     }
@@ -175,7 +177,7 @@ mod tests {
         let e = lib.entries().last().unwrap();
         let present: Vec<String> = e.fields.iter().map(|f| f.name.clone()).collect();
         let l = layout(&p, "book", &present, true);
-        assert_eq!(l.main, vec!["author", "title", "series", "publisher", "location", "date", "eprint"]);
+        assert_eq!(l.main, vec!["author", "title", "series", "number", "publisher", "location", "date", "eprint"]);
         assert!(l.other.is_empty());
         let l = layout(&p, "book", &["owner".to_string()], true);
         assert_eq!(l.bookkeeping, vec!["owner"]);
