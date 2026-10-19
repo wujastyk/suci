@@ -32,9 +32,13 @@ citation styles used in the humanities.
 
 Not (yet) included: JabRef groups, full-text PDF search, Word/LibreOffice integration (by design).
 
+## Github repository
+
+[https://github.com/wujastyk/suci](https://github.com/wujastyk/suci)
+
 ## Install on Linux Mint 22 / Ubuntu 24.04
 
-Download the latest `suci_…_amd64.deb` from the **Releases** page and double-click it, or:
+Download the latest `suci_…_amd64.deb` from the **[Releases](https://github.com/wujastyk/suci/releases)** page and double-click it, or:
 
 ```sh
 sudo apt install ./suci_0.1.0_amd64.deb
