@@ -74,6 +74,41 @@ fn build_index(lib: &Library) -> Vec<Option<SearchIndex>> {
     })
 }
 
+/// Leading number of the `volume` field ("2", "2a", "II" → 2).
+pub fn volume_number(e: &Entry) -> Option<i64> {
+    let v = crate::latex::to_plain(&e.get_nonempty("volume")?);
+    let v = v.trim();
+    let digits: String = v.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if !digits.is_empty() {
+        return digits.parse().ok();
+    }
+    roman(v)
+}
+
+fn roman(s: &str) -> Option<i64> {
+    let val = |c: char| match c.to_ascii_uppercase() {
+        'I' => Some(1),
+        'V' => Some(5),
+        'X' => Some(10),
+        'L' => Some(50),
+        'C' => Some(100),
+        _ => None,
+    };
+    let vals: Vec<i64> = s.chars().map(val).collect::<Option<Vec<_>>>()?;
+    if vals.is_empty() {
+        return None;
+    }
+    let mut total = 0;
+    for i in 0..vals.len() {
+        if i + 1 < vals.len() && vals[i] < vals[i + 1] {
+            total -= vals[i];
+        } else {
+            total += vals[i];
+        }
+    }
+    Some(total)
+}
+
 pub fn now_stamp() -> String {
     chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
 }
@@ -361,6 +396,25 @@ impl Document {
     pub fn rebuild(&mut self) {
         self.index = build_index(&self.lib);
         self.profile = Profile::build(&self.lib);
+    }
+
+    /// Entries whose crossref points at this key (e.g. the volumes of a
+    /// multi-volume work), ordered by volume number.
+    pub fn children_of(&self, key: &str) -> Vec<usize> {
+        let mut v: Vec<(i64, String, usize)> = self
+            .lib
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, it)| match it {
+                Item::Entry(e) if e.get_nonempty("crossref").is_some_and(|c| c.trim().eq_ignore_ascii_case(key)) => {
+                    Some((volume_number(e).unwrap_or(i64::MAX), e.key.clone(), i))
+                }
+                _ => None,
+            })
+            .collect();
+        v.sort();
+        v.into_iter().map(|(_, _, i)| i).collect()
     }
 
     pub fn lookup_entry(&self, key: &str) -> Option<Entry> {

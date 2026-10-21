@@ -257,6 +257,51 @@ impl App {
         self.shorten_dois(sel, false);
     }
 
+    /// Add an entry for the next volume of the current multi-volume work (or of
+    /// the set the current volume belongs to).
+    pub fn add_volume(self: &Rc<Self>) {
+        self.flush();
+        let target = {
+            let st = self.state.borrow();
+            let Some(cur) = st.current.and_then(|i| st.doc.entry(i)) else { return };
+            if super::editor::volume_type(&cur.ty_lower()).is_some() {
+                Some(cur.clone())
+            } else {
+                cur.get_nonempty("crossref")
+                    .and_then(|k| st.doc.lookup_entry(k.trim()))
+                    .filter(|p| super::editor::volume_type(&p.ty_lower()).is_some())
+            }
+        };
+        let Some(parent) = target else {
+            self.toast("Volumes can be added to multi-volume entries (type MvBook, MvCollection …). Change the entry type first.", None);
+            return;
+        };
+        let ty = super::editor::volume_type(&parent.ty_lower()).unwrap();
+        let idx = {
+            let mut st = self.state.borrow_mut();
+            let kids = st.doc.children_of(&parent.key);
+            let next = kids
+                .iter()
+                .filter_map(|&i| st.doc.entry(i).and_then(suci::doc::volume_number))
+                .max()
+                .unwrap_or(0)
+                + 1;
+            // key in the library's style: parent key + volume number (kavi-sadv2)
+            let keys = st.doc.keys();
+            let key = suci::keygen::unique_key(&format!("{}{}", parent.key, next), |k| keys.contains(k));
+            let mut e = Entry::new(ty, &key);
+            e.set("crossref", &parent.key);
+            e.set("volume", &next.to_string());
+            st.doc.add_entry(e)
+        };
+        self.w.search.set_text("");
+        self.after_doc_change(Some(idx));
+        let key = self.state.borrow().doc.entry(idx).map(|e| e.key.clone()).unwrap_or_default();
+        self.toast(&format!("Added {key}. Fill in its ARK or URL (and its own title or date, if any)."), None);
+        let me = self.clone();
+        glib::idle_add_local_once(move || super::editor::focus_named_field(&me, "eprint"));
+    }
+
     /// Right-click menu on the entry list.
     pub fn setup_list_context_menu(self: &Rc<Self>) {
         let menu = gio::Menu::new();
@@ -273,6 +318,7 @@ impl App {
         menu.append_section(None, &s2);
         let s3 = gio::Menu::new();
         s3.append(Some("Open Link (URL / DOI)"), Some("win.open-link"));
+        s3.append(Some("Add Volume…"), Some("win.add-volume"));
         s3.append(Some("Edit BibTeX Source"), Some("win.toggle-source"));
         s3.append(Some("Open PDF"), Some("win.open-pdf"));
         s3.append(Some("Duplicate"), Some("win.duplicate"));

@@ -34,6 +34,46 @@ pub struct Row {
     key_lower: String,
 }
 
+/// What the list shows for an entry with a crossref: the author, date and
+/// (for volumes without their own title) the title of the parent, e.g.
+/// "Suśruta-Saṃhitā …, vol. 2".
+fn with_parent_for_display(e: &Entry, parent: Option<&Entry>) -> Option<Entry> {
+    let p = parent?;
+    let mut d = e.clone();
+    for f in ["author", "editor", "date", "year"] {
+        if d.get_nonempty(f).is_none() {
+            if let Some(v) = p.get_nonempty(f) {
+                d.set(f, &v);
+            }
+        }
+    }
+    if d.get_nonempty("title").is_none() {
+        if let Some(t) = p.get_nonempty("title") {
+            let t = match d.get_nonempty("volume") {
+                Some(v) if p.ty_lower().starts_with("mv") => format!("{t}, vol. {v}"),
+                _ => t,
+            };
+            d.set("title", &t);
+        }
+    }
+    Some(d)
+}
+
+fn parent_of<'a>(e: &Entry, by_key: &std::collections::HashMap<String, &'a Entry>) -> Option<&'a Entry> {
+    e.get_nonempty("crossref").and_then(|k| by_key.get(&k.trim().to_lowercase()).copied())
+}
+
+pub fn make_row_with_parent(e: &Entry, parent: Option<&Entry>, sanskrit: bool) -> Row {
+    match with_parent_for_display(e, parent) {
+        Some(d) => {
+            let mut r = make_row(&d, sanskrit);
+            r.has_file = e.get_nonempty("file").is_some();
+            r
+        }
+        None => make_row(e, sanskrit),
+    }
+}
+
 pub fn make_row(e: &Entry, sanskrit: bool) -> Row {
     let persons = e.get_nonempty("author").or_else(|| e.get_nonempty("editor")).unwrap_or_default();
     let author = suci::names::short_display(&persons);
@@ -84,6 +124,8 @@ pub fn rebuild_rows(app: &Rc<App>) {
     let mut st = app.state.borrow_mut();
     let sanskrit = st.settings.sort_mode == SortMode::Sanskrit;
     let items = &st.doc.lib.items;
+    let by_key: std::collections::HashMap<String, &Entry> = st.doc.lib.entries().map(|e| (e.key.to_lowercase(), e)).collect();
+    let by_key = &by_key;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 8);
     let chunk = items.len().div_ceil(threads).max(1);
     let rows: Vec<Option<Row>> = std::thread::scope(|s| {
@@ -92,7 +134,10 @@ pub fn rebuild_rows(app: &Rc<App>) {
             .map(|part| {
                 s.spawn(move || {
                     part.iter()
-                        .map(|it| if let suci::bib::Item::Entry(e) = it { Some(make_row(e, sanskrit)) } else { None })
+                        .map(|it| match it {
+                            suci::bib::Item::Entry(e) => Some(make_row_with_parent(e, parent_of(e, by_key), sanskrit)),
+                            _ => None,
+                        })
                         .collect::<Vec<_>>()
                 })
             })
@@ -233,7 +278,10 @@ pub fn refresh_row(app: &Rc<App>, idx: usize) {
     {
         let mut st = app.state.borrow_mut();
         let sanskrit = st.settings.sort_mode == SortMode::Sanskrit;
-        let row = st.doc.entry(idx).map(|e| make_row(e, sanskrit));
+        let row = st.doc.entry(idx).map(|e| {
+            let parent = e.get_nonempty("crossref").and_then(|k| st.doc.lookup_entry(k.trim()));
+            make_row_with_parent(e, parent.as_ref(), sanskrit)
+        });
         if idx < st.rows.len() {
             st.rows[idx] = row;
         }

@@ -350,14 +350,39 @@ pub fn with_crossref(e: &Entry, lookup: &dyn Fn(&str) -> Option<Entry>) -> Entry
             }
         }
     };
-    inherit("title", "booktitle");
-    inherit("subtitle", "booksubtitle");
-    inherit("author", "bookauthor");
+    let pty = parent.ty_lower();
+    let cty = e.ty_lower();
+    if pty.starts_with("mv") {
+        // biblatex: a multi-volume work's title becomes the volume's main title
+        inherit("title", "maintitle");
+        inherit("subtitle", "mainsubtitle");
+        inherit("titleaddon", "maintitleaddon");
+        if cty.starts_with("in") || cty == "bookinbook" || cty.starts_with("supp") {
+            inherit("author", "bookauthor");
+        } else {
+            inherit("author", "author");
+        }
+    } else if pty == "periodical" {
+        inherit("title", "journaltitle");
+        inherit("subtitle", "journalsubtitle");
+    } else {
+        inherit("title", "booktitle");
+        inherit("subtitle", "booksubtitle");
+        inherit("author", "bookauthor");
+    }
+    // a parent that is itself a volume of a multi-volume work
+    for f in ["maintitle", "mainsubtitle", "maintitleaddon"] {
+        inherit(f, f);
+    }
     for f in [
-        "editor", "translator", "publisher", "location", "address", "date", "year", "series", "number", "volumes",
-        "edition", "isbn", "journaltitle", "journal", "institution", "organization", "langid",
+        "editor", "translator", "publisher", "location", "address", "date", "year", "series", "number", "edition",
+        "isbn", "journaltitle", "journal", "institution", "organization", "langid",
     ] {
         inherit(f, f);
+    }
+    // "2 vols." describes the set, not one of its volumes
+    if !(pty.starts_with("mv") && e.get_nonempty("volume").is_some()) {
+        inherit("volumes", "volumes");
     }
     out.raw = None;
     out
@@ -375,6 +400,23 @@ fn title_with_sub(e: &Entry, t: &str, s: &str) -> Option<String> {
             Some(format!("{title}{sep}{sub}"))
         }
         None => Some(title),
+    }
+}
+
+/// Title for a volume of a multi-volume work, Chicago style:
+/// "Main Title" (with the volume number kept separately) when the volume has no
+/// title of its own, else "Main Title. Vol. 2, Volume Title" (number consumed).
+fn volume_title(e: &Entry, own_title: &str, own_sub: &str) -> Option<(String, bool)> {
+    let main = title_with_sub(e, "maintitle", "mainsubtitle")?;
+    match title_with_sub(e, own_title, own_sub) {
+        Some(own) if crate::latex::to_plain(&own) != crate::latex::to_plain(&main) => {
+            let vol = e.get_nonempty("volume").map(|v| to_plain(&v));
+            Some(match vol {
+                Some(v) => (format!("{main}. Vol. {v}, {own}"), true),
+                None => (format!("{main}. {own}"), false),
+            })
+        }
+        _ => Some((main, false)),
     }
 }
 
@@ -557,14 +599,23 @@ pub fn to_hayagriva(e: &Entry) -> Value {
             put(&mut m, "author", authors.map(Value::Array));
             put(&mut m, "page-range", e.get_nonempty("pages").map(|p| json!(to_plain(&p))));
             parent.insert("type".into(), json!(pty));
-            put_s(&mut parent, "title", title_with_sub(e, "booktitle", "booksubtitle"));
+            let mut vol_used = false;
+            match volume_title(e, "booktitle", "booksubtitle") {
+                Some((t, used)) => {
+                    parent.insert("title".into(), json!(t));
+                    vol_used = used;
+                }
+                None => put_s(&mut parent, "title", title_with_sub(e, "booktitle", "booksubtitle")),
+            }
             put(&mut parent, "editor", editors.map(Value::Array));
             if let Some(ba) = e.get_nonempty("bookauthor") {
                 parent.insert("author".into(), Value::Array(persons(&ba)));
             }
             put(&mut parent, "publisher", publisher(e));
             put(&mut parent, "edition", num(e, "edition"));
-            put(&mut parent, "volume", num(e, "volume"));
+            if !vol_used {
+                put(&mut parent, "volume", num(e, "volume"));
+            }
             put(&mut parent, "volume-total", num_strict(e, "volumes"));
             put(&mut parent, "date", date_value(e));
             let mut ps = Map::new();
@@ -572,7 +623,7 @@ pub fn to_hayagriva(e: &Entry) -> Value {
                 ps.insert("isbn".into(), json!(to_plain(&i)));
                 parent.insert("serial-number".into(), Value::Object(ps));
             }
-            if let Some(sp) = series_parent(e, pty) {
+            if let Some(sp) = series_parent(e, "anthology") {
                 parent.insert("parent".into(), sp);
             }
             serials(e, &mut m, false);
@@ -643,11 +694,20 @@ pub fn to_hayagriva(e: &Entry) -> Value {
             put(&mut m, "editor", editors.map(Value::Array));
             put(&mut m, "publisher", publisher(e).or_else(|| prot(e, "howpublished").map(|h| json!({ "name": h }))));
             put(&mut m, "edition", num(e, "edition"));
-            put(&mut m, "volume", num(e, "volume"));
+            let mut vol_used = false;
+            if let Some((t, used)) = volume_title(e, "title", "subtitle") {
+                m.insert("title".into(), json!(t));
+                vol_used = used;
+            }
+            if !vol_used {
+                put(&mut m, "volume", num(e, "volume"));
+            }
             put(&mut m, "volume-total", num_strict(e, "volumes"));
             put(&mut m, "page-total", num_strict(e, "pagetotal"));
             serials(e, &mut m, true);
-            if let Some(sp) = series_parent(e, "book") {
+            // an Anthology parent gives the CSL collection title (series) without
+            // hayagriva also printing the volume as a "part" ("Vol. 18, pt. 18")
+            if let Some(sp) = series_parent(e, "anthology") {
                 m.insert("parent".into(), sp);
             }
         }
@@ -716,6 +776,25 @@ mod tests {
             assert_eq!(r.citations.len(), 5);
             assert_eq!(r.bib_text.len(), 5, "{}", s.id);
         }
+    }
+
+    #[test]
+    fn volumes_of_multivolume_works() {
+        let src = r#"
+@MvBook{kavi-sadv, editor={Sures Chandra Banerji}, title={Saduktikarṇāmṛta}, volumes={2}, location={Lahore}, publisher={Motilal}, date={1933/1936}}
+@Book{kavi-sadv1, crossref={kavi-sadv}, volume={1}, date={1933}, eprint={ark:/13960/t0wq6n34h}, eprinttype={ark}}
+@Book{kavi-sadv2, crossref={kavi-sadv}, volume={2}, title={Notes and Indexes}, date={1936}}
+"#;
+        let r = render_all(src, "chicago-author-date-17th-edition");
+        let all = r.bib_text.join("\n");
+        assert!(all.contains("Saduktikarṇāmṛta. 2 vols. Lahore: Motilal."), "{all}");
+        let r = render_all(
+            "@Book{falk, author={Harry Falk}, title={Aśokan Sites}, volume={18}, series={Monographien zur indischen Archäologie}, number={18}, location={Mainz}, publisher={Zabern}, date={2006}}",
+            "chicago-author-date-17th-edition",
+        );
+        assert_eq!(r.bib_text[0], "Falk, Harry. 2006. Aśokan Sites. Vol. 18. Monographien zur indischen Archäologie 18. Mainz: Zabern.");
+        assert!(all.contains("ed. 1933b. Saduktikarṇāmṛta. Vol. 1. Lahore: Motilal."), "{all}");
+        assert!(all.contains("ed. 1936. Saduktikarṇāmṛta. Vol. 2, Notes and Indexes. Lahore: Motilal."), "{all}");
     }
 
     #[test]

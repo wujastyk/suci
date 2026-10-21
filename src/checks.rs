@@ -123,6 +123,10 @@ pub fn clean_doi(s: &str) -> String {
     DOI_URL_RE.replace(s.trim(), "").trim().to_string()
 }
 
+fn ctx_is_multivolume(ty: &str) -> bool {
+    ty.starts_with("mv")
+}
+
 /// Entry types that are parts of a larger work.
 fn is_part_type(ty: &str) -> bool {
     matches!(
@@ -421,6 +425,23 @@ fn entry_issues(ctx: &Ctx, idx: usize, e: &Entry, dirs: Option<&FileDirs>, issue
                     }
                 }
             }
+            "eprint" | "url"
+                if v.matches("ark:/").count() > 1
+                    || v.matches("http").count() > 1
+                    || (name != "url" && v.trim().contains(|c: char| c.is_whitespace() || c == ',' || c == ';')) =>
+            {
+                let multi = ctx_is_multivolume(&ty);
+                push(
+                    Some(&f.name),
+                    Severity::Warning,
+                    if multi {
+                        "More than one link in this field; only one can work. Give each volume its own entry (right-click → Add Volume)".into()
+                    } else {
+                        "More than one link in this field; only one can work. For several volumes, use a multi-volume entry with one entry per volume".into()
+                    },
+                    None,
+                );
+            }
             "eprint" => {
                 if e.get_nonempty("eprinttype").is_none() && v.trim().starts_with("ark:") {
                     push(Some("eprinttype"), Severity::Info, "eprint is an ARK but eprinttype is empty".into(), Some("ark".into()));
@@ -509,6 +530,13 @@ mod tests {
         assert!(isbn_valid("0-306-40615-2"));
         assert_eq!(isbn13("0306406152").unwrap(), "9780306406157");
         assert!(issn_valid("1356-1863"));
+    }
+
+    #[test]
+    fn several_links_in_one_field() {
+        let lib = Library::parse("@MvBook{m, editor={E}, title={T}, date={1900}, eprint={ark:/13960/a ark:/13960/b}, eprinttype={ark}}\n@Book{b, author={A}, title={T}, date={1900}, url={http://a.org http://b.org}}\n@Book{c, author={A}, title={T}, date={1900}, eprint={ark:/13960/a}}");
+        let iss = check(&lib, None);
+        assert_eq!(iss.iter().filter(|i| i.message.starts_with("More than one link")).count(), 2, "{iss:#?}");
     }
 
     #[test]

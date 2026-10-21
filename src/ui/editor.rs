@@ -273,6 +273,9 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
     let more = gtk::MenuButton::builder().icon_name("view-more-symbolic").tooltip_text("More actions").build();
     let menu = gio::Menu::new();
     menu.append(Some("Open link (URL / DOI)"), Some("win.open-link"));
+    if volume_type(&e.ty_lower()).is_some() || e.get_nonempty("crossref").is_some() {
+        menu.append(Some("Add volume…"), Some("win.add-volume"));
+    }
     menu.append(Some("Edit BibTeX source (Ctrl+U)"), Some("win.toggle-source"));
     menu.append(Some("Capitalise title (English)"), Some("win.titlecase-sel"));
     menu.append(Some("Shorten DOI (shortDOI)"), Some("win.shorten-doi-sel"));
@@ -326,6 +329,8 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
         build_source(app, root, &e);
         return;
     }
+
+    volumes_section(app, root, &e);
 
 
     // ---- fields ----
@@ -395,6 +400,152 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
         let exp = gtk::Expander::new(Some("Bookkeeping"));
         exp.set_child(Some(&field_grid(app, &e, &lay.bookkeeping, &required, &field_issues, &dirs)));
         root.append(&exp);
+    }
+}
+
+/// Entry type of the volumes of a multi-volume work.
+pub fn volume_type(parent_ty: &str) -> Option<&'static str> {
+    Some(match parent_ty {
+        "mvbook" => "Book",
+        "mvcollection" => "Collection",
+        "mvreference" => "Reference",
+        "mvproceedings" => "Proceedings",
+        _ => return None,
+    })
+}
+
+/// Link (eprint, URL or DOI) of an entry, as a web address.
+pub fn entry_link(e: &Entry) -> Option<(String, String)> {
+    if let Some(ep) = e.get_nonempty("eprint") {
+        if let Some(u) = suci::files::eprint_url(&ep, &e.get("eprinttype").unwrap_or_default()) {
+            return Some((ep.trim().to_string(), u));
+        }
+    }
+    if let Some(u) = e.get_nonempty("url") {
+        let u = clean_url(&u);
+        return Some((u.clone(), u));
+    }
+    e.get_nonempty("doi").map(|d| {
+        let d = suci::checks::clean_doi(&d);
+        (format!("doi:{d}"), format!("https://doi.org/{d}"))
+    })
+}
+
+fn section_label(text: &str) -> gtk::Label {
+    let l = gtk::Label::new(Some(text));
+    l.add_css_class("section-title");
+    l.set_halign(gtk::Align::Start);
+    l
+}
+
+/// For a multi-volume work: its volumes with their links. For a volume: a
+/// line naming the set it belongs to.
+fn volumes_section(app: &Rc<App>, root: &gtk::Box, e: &Entry) {
+    let ty = e.ty_lower();
+    if volume_type(&ty).is_some() {
+        let kids: Vec<(usize, Entry)> = {
+            let st = app.state.borrow();
+            st.doc.children_of(&e.key).into_iter().filter_map(|i| st.doc.entry(i).cloned().map(|c| (i, c))).collect()
+        };
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let label = section_label(&if kids.is_empty() { "Volumes".to_string() } else { format!("Volumes ({})", kids.len()) });
+        label.set_hexpand(true);
+        head.append(&label);
+        let add = gtk::Button::with_label("Add volume…");
+        add.set_tooltip_text(Some("Create an entry for the next volume, linked to this one by crossref"));
+        add.set_action_name(Some("win.add-volume"));
+        head.append(&add);
+        root.append(&head);
+        if kids.is_empty() {
+            let l = gtk::Label::new(Some(
+                "No volume entries yet. Each volume gets its own entry with its own ARK or URL, and inherits the title, editors and publisher from this one.",
+            ));
+            l.set_wrap(true);
+            l.set_xalign(0.0);
+            l.add_css_class("dim-label");
+            root.append(&l);
+            return;
+        }
+        let grid = gtk::Grid::builder().column_spacing(10).row_spacing(4).build();
+        for (row, (idx, c)) in kids.iter().enumerate() {
+            let r = row as i32;
+            let vol = c.get_nonempty("volume").map(|v| format!("Vol. {}", suci::latex::to_plain(&v))).unwrap_or_else(|| "Vol. ?".into());
+            let vl = gtk::Label::new(Some(&vol));
+            vl.set_xalign(0.0);
+            grid.attach(&vl, 0, r, 1, 1);
+            let mut desc = c.get_nonempty("title").map(|t| suci::latex::to_plain(&t)).unwrap_or_default();
+            if let Some(d) = c.get_nonempty("date").or_else(|| c.get_nonempty("year")) {
+                desc = if desc.is_empty() { d } else { format!("{desc} ({d})") };
+            }
+            let dl = gtk::Label::new(Some(&desc));
+            dl.set_xalign(0.0);
+            dl.set_hexpand(true);
+            dl.set_ellipsize(pango::EllipsizeMode::End);
+            grid.attach(&dl, 1, r, 1, 1);
+            match entry_link(c) {
+                Some((shown, url)) => {
+                    let ll = gtk::Label::new(Some(&shown));
+                    ll.add_css_class("monospace");
+                    ll.add_css_class("dim-label");
+                    ll.set_ellipsize(pango::EllipsizeMode::Middle);
+                    ll.set_max_width_chars(28);
+                    ll.set_xalign(0.0);
+                    grid.attach(&ll, 2, r, 1, 1);
+                    let ob = gtk::Button::with_label("Open");
+                    ob.set_tooltip_text(Some(&format!("Open {url}")));
+                    let me = app.clone();
+                    ob.connect_clicked(move |_| me.launch_uri(&url));
+                    grid.attach(&ob, 3, r, 1, 1);
+                }
+                None => {
+                    let ll = gtk::Label::new(Some("no link yet"));
+                    ll.add_css_class("dim-label");
+                    ll.set_xalign(0.0);
+                    grid.attach(&ll, 2, r, 1, 1);
+                }
+            }
+            let sb = gtk::Button::with_label("Show");
+            sb.set_tooltip_text(Some(&format!("Edit {}", c.key)));
+            let me = app.clone();
+            let i = *idx;
+            sb.connect_clicked(move |_| {
+                me.w.search.set_text("");
+                me.refilter(Some(i));
+            });
+            grid.attach(&sb, 4, r, 1, 1);
+        }
+        root.append(&grid);
+        return;
+    }
+    // a volume: show which set it belongs to
+    let parent = {
+        let st = app.state.borrow();
+        e.get_nonempty("crossref").and_then(|k| st.doc.find_key(k.trim()).and_then(|i| st.doc.entry(i).cloned().map(|p| (i, p))))
+    };
+    if let Some((pi, p)) = parent {
+        if volume_type(&p.ty_lower()).is_none() {
+            return;
+        }
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let vol = e.get_nonempty("volume").map(|v| format!("Volume {} of ", suci::latex::to_plain(&v))).unwrap_or_else(|| "Volume of ".into());
+        let title = suci::latex::to_plain(&p.get("title").unwrap_or_default());
+        let l = gtk::Label::new(None);
+        l.set_markup(&format!("{}<i>{}</i>", glib::markup_escape_text(&vol), glib::markup_escape_text(&title)));
+        l.set_xalign(0.0);
+        l.set_hexpand(true);
+        l.set_ellipsize(pango::EllipsizeMode::End);
+        row.append(&l);
+        let show = gtk::Button::with_label("Show set");
+        let me = app.clone();
+        show.connect_clicked(move |_| {
+            me.w.search.set_text("");
+            me.refilter(Some(pi));
+        });
+        row.append(&show);
+        let next = gtk::Button::with_label("Add next volume");
+        next.set_action_name(Some("win.add-volume"));
+        row.append(&next);
+        root.append(&row);
     }
 }
 
@@ -586,6 +737,10 @@ pub fn rebuild_keep_focus(app: &Rc<App>) {
             focus_field(&me, &f);
         }
     });
+}
+
+pub fn focus_named_field(app: &Rc<App>, name: &str) {
+    focus_field(app, name);
 }
 
 fn focus_field(app: &Rc<App>, name: &str) {

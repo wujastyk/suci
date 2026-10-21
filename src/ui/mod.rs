@@ -353,6 +353,7 @@ impl App {
         add("duplicate", Box::new(|a| a.duplicate_selected()));
         add("titlecase-sel", Box::new(|a| a.titlecase_selected()));
         add("open-link", Box::new(|a| a.open_link()));
+        add("add-volume", Box::new(|a| a.add_volume()));
         add("titlecase-all", Box::new(|a| a.titlecase_library()));
         add("shorten-doi-sel", Box::new(|a| a.shorten_selected()));
         let tf = gio::SimpleAction::new("titlecase-field", Some(glib::VariantTy::STRING));
