@@ -785,6 +785,12 @@ fn field_grid(
                 b.connect_clicked(move |_| me.launch_uri(&u));
                 cell.append(&b);
             }
+            "file" => {
+                let b = text_button("Choose…", "Pick one or more files from your computer to link to this entry");
+                let me = app.clone();
+                b.connect_clicked(move |_| choose_attachment(&me));
+                cell.append(&b);
+            }
             "crossref" if !value_trim.is_empty() => {
                 let b = text_button("Go to", "Show the cross-referenced entry");
                 let me = app.clone();
@@ -896,11 +902,20 @@ fn file_button(app: &Rc<App>, lf: &LinkedFile, dirs: &suci::files::FileDirs) -> 
             )));
         }
     }
-    b.upcast()
+    let unlink = gtk::Button::with_label("×");
+    unlink.add_css_class("flat");
+    unlink.set_tooltip_text(Some("Remove this link from the entry (the file itself is not deleted)"));
+    let me = app.clone();
+    let p = lf.path.clone();
+    unlink.connect_clicked(move |_| unlink_file(&me, &p));
+    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    bx.append(&b);
+    bx.append(&unlink);
+    bx.upcast()
 }
 
 fn choose_attachment(app: &Rc<App>) {
-    let dialog = gtk::FileDialog::builder().title("Attach file").modal(true).build();
+    let dialog = gtk::FileDialog::builder().title("Link files to this entry").modal(true).build();
     let f = gtk::FileFilter::new();
     f.set_name(Some("Documents (PDF, DjVu, EPUB)"));
     for p in ["*.pdf", "*.PDF", "*.djvu", "*.epub"] {
@@ -913,39 +928,88 @@ fn choose_attachment(app: &Rc<App>) {
     store.append(&f);
     store.append(&all);
     dialog.set_filters(Some(&store));
-    if let Some(d) = app.state.borrow().doc.file_dirs.dirs.first() {
+    // start in the folder of a file already linked to this entry, else the PDF folder
+    let start = {
+        let st = app.state.borrow();
+        let linked = st
+            .current
+            .and_then(|i| st.doc.entry(i))
+            .and_then(|e| e.get_nonempty("file"))
+            .and_then(|f| parse_file_field(&f).into_iter().find_map(|lf| st.doc.file_dirs.resolve(&lf.path)))
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        linked.or_else(|| st.doc.file_dirs.dirs.iter().find(|d| d.is_dir()).cloned())
+    };
+    if let Some(d) = start {
         dialog.set_initial_folder(Some(&gio::File::for_path(d)));
     }
     let me = app.clone();
-    dialog.open(Some(&app.w.window), None::<&gio::Cancellable>, move |res| {
-        if let Ok(file) = res {
-            if let Some(p) = file.path() {
-                attach_file(&me, &p);
-            }
+    dialog.open_multiple(Some(&app.w.window), None::<&gio::Cancellable>, move |res| {
+        if let Ok(files) = res {
+            let paths: Vec<std::path::PathBuf> =
+                (0..files.n_items()).filter_map(|i| files.item(i).and_downcast::<gio::File>().and_then(|f| f.path())).collect();
+            attach_files(&me, &paths);
         }
     });
 }
 
 pub fn attach_file(app: &Rc<App>, path: &std::path::Path) {
+    attach_files(app, &[path.to_path_buf()]);
+}
+
+/// Link files to the current entry (one undo step). Files already linked are skipped.
+pub fn attach_files(app: &Rc<App>, paths: &[std::path::PathBuf]) {
+    if paths.is_empty() {
+        return;
+    }
+    app.flush();
+    let (idx, e, added) = {
+        let st = app.state.borrow();
+        let Some(i) = st.current else { return };
+        let Some(mut e) = st.doc.entry(i).cloned() else { return };
+        let mut files = parse_file_field(&e.get("file").unwrap_or_default());
+        let mut added = Vec::new();
+        for path in paths {
+            let stored = st.doc.file_dirs.relativize(path);
+            if files.iter().any(|f| f.path == stored) {
+                continue;
+            }
+            files.push(LinkedFile { description: String::new(), path: stored, file_type: file_type_for(path) });
+            added.push(path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default());
+        }
+        e.set("file", &serialize_file_field(&files));
+        (i, e, added)
+    };
+    if added.is_empty() {
+        app.toast("Already linked to this entry", None);
+        return;
+    }
+    app.state.borrow_mut().doc.update_entry(idx, e);
+    super::list::refresh_row(app, idx);
+    app.update_title();
+    rebuild_keep_focus(app);
+    let msg = if added.len() == 1 { format!("Linked {}", added[0]) } else { format!("Linked {} files", added.len()) };
+    app.toast(&msg, None);
+}
+
+/// Remove one link from the current entry (the file itself is not touched).
+fn unlink_file(app: &Rc<App>, path: &str) {
     app.flush();
     let upd = {
         let st = app.state.borrow();
         let Some(i) = st.current else { return };
         let Some(mut e) = st.doc.entry(i).cloned() else { return };
         let mut files = parse_file_field(&e.get("file").unwrap_or_default());
-        let stored = st.doc.file_dirs.relativize(path);
-        if files.iter().any(|f| f.path == stored) {
-            return;
-        }
-        files.push(LinkedFile { description: String::new(), path: stored, file_type: file_type_for(path) });
+        files.retain(|f| f.path != path);
         e.set("file", &serialize_file_field(&files));
         (i, e)
     };
     app.state.borrow_mut().doc.update_entry(upd.0, upd.1);
     super::list::refresh_row(app, upd.0);
     app.update_title();
-    rebuild(app);
-    app.toast(&format!("Attached {}", path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()), None);
+    rebuild_keep_focus(app);
+    let me = app.clone();
+    let name = std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or(path.to_string());
+    app.toast(&format!("Unlinked {name} (the file itself is unchanged)"), Some(Box::new(move || me.undo_public())));
 }
 
 /// Update widgets that show derived values (key) after a commit, without
