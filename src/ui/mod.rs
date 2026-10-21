@@ -1039,13 +1039,22 @@ impl App {
                     e.set_key(&k);
                 }
             }
+            // fields that have buttons beside them (Open, Fetch, Go to …)
+            let buttons_changed = edited_fields.iter().any(|f| {
+                matches!(f.to_lowercase().as_str(), "url" | "doi" | "isbn" | "eprint" | "eprinttype" | "crossref" | "file")
+            });
             if st.doc.update_entry(idx, e) {
-                Some(idx)
+                Some((idx, buttons_changed))
             } else {
                 None
             }
         };
-        if let Some(idx) = changed {
+        if let Some((idx, buttons_changed)) = changed {
+            if buttons_changed {
+                // show the buttons for the new value, keeping the cursor where it was
+                let me = self.clone();
+                glib::idle_add_local_once(move || editor::rebuild_keep_focus(&me));
+            }
             self.needs_resort.set(true);
             list::refresh_row(self, idx);
             self.update_title();

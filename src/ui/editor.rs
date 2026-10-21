@@ -565,6 +565,29 @@ fn add_field(app: &Rc<App>, name: &str) {
     glib::idle_add_local_once(move || focus_field(&me, &name));
 }
 
+/// Rebuild the editor and put the cursor back in the field it was in.
+pub fn rebuild_keep_focus(app: &Rc<App>) {
+    let focused = gtk::prelude::GtkWindowExt::focus(&app.w.window).and_then(|w| {
+        let mut cur = Some(w);
+        while let Some(c) = cur {
+            if let Some(n) = c.widget_name().strip_prefix("field-") {
+                return Some(n.to_string());
+            }
+            cur = c.parent();
+        }
+        None
+    });
+    let scroll = app.w.editor_scroller.vadjustment().value();
+    rebuild(app);
+    let me = app.clone();
+    glib::idle_add_local_once(move || {
+        me.w.editor_scroller.vadjustment().set_value(scroll);
+        if let Some(f) = focused {
+            focus_field(&me, &f);
+        }
+    });
+}
+
 fn focus_field(app: &Rc<App>, name: &str) {
     if let Some(root) = app.w.editor_scroller.child() {
         let mut stack = vec![root];
