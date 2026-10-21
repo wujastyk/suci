@@ -48,6 +48,7 @@ pub fn required_fields(ty: &str, biblatex: bool) -> Vec<&'static str> {
         "periodical" => vec!["title", date],
         "patent" => vec!["author", "title", "number", date],
         "software" | "dataset" => vec!["title"],
+        "entry" => vec!["name", "description"],
         _ => vec!["title"],
     }
 }
@@ -117,8 +118,27 @@ pub struct Layout {
 /// Fields used in at least this share of a type's entries get a slot.
 pub const SLOT_THRESHOLD: f64 = 0.15;
 
+/// Glossary items (`@Entry`, as used by bib2gls) show only these.
+pub const GLOSSARY_FIELDS: &[&str] = &["description", "name", "citationkey"];
+
 pub fn layout(profile: &Profile, ty: &str, present: &[String], biblatex: bool) -> Layout {
     let ty = ty.to_lowercase();
+    if ty == "entry" {
+        let mut other = Vec::new();
+        let mut bookkeeping = Vec::new();
+        for p in present {
+            let l = p.to_lowercase();
+            if GLOSSARY_FIELDS.contains(&l.as_str()) {
+                continue;
+            }
+            if BOOKKEEPING.contains(&l.as_str()) {
+                bookkeeping.push(p.clone());
+            } else {
+                other.push(p.clone());
+            }
+        }
+        return Layout { main: GLOSSARY_FIELDS.iter().map(|s| s.to_string()).collect(), other, bookkeeping };
+    }
     let present_l: Vec<String> = present.iter().map(|s| s.to_lowercase()).collect();
     let req: Vec<&str> = required_fields(&ty, biblatex).iter().flat_map(|r| r.split('|').take(1)).collect();
     let mut main = Vec::new();
@@ -165,6 +185,16 @@ pub fn layout(profile: &Profile, ty: &str, present: &[String], biblatex: bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glossary_entry_layout() {
+        let p = Profile::default();
+        let present: Vec<String> = ["name", "description", "citationkey", "owner", "parent"].iter().map(|s| s.to_string()).collect();
+        let l = layout(&p, "Entry", &present, true);
+        assert_eq!(l.main, vec!["description", "name", "citationkey"]);
+        assert_eq!(l.other, vec!["parent"]);
+        assert_eq!(l.bookkeeping, vec!["owner"]);
+    }
 
     #[test]
     fn layout_prioritises_used_fields() {

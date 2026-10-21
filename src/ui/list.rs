@@ -43,7 +43,8 @@ pub fn make_row(e: &Entry, sanskrit: bool) -> Row {
         .map(|n| suci::latex::to_plain(&format!("{} {} {}", n.last, n.von, n.first)))
         .collect::<Vec<_>>()
         .join(" ");
-    let mut title = suci::latex::to_plain(&e.get("title").unwrap_or_default());
+    // glossary items (@Entry) have a name instead of a title
+    let mut title = suci::latex::to_plain(&e.get_nonempty("title").or_else(|| e.get_nonempty("name")).unwrap_or_default());
     if let Some(sub) = e.get_nonempty("subtitle") {
         title.push_str(": ");
         title.push_str(&suci::latex::to_plain(&sub));

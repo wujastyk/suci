@@ -272,6 +272,7 @@ impl App {
         s2.append(Some("LaTeX Accents → Unicode"), Some("win.to-unicode-sel"));
         menu.append_section(None, &s2);
         let s3 = gio::Menu::new();
+        s3.append(Some("Open Link (URL / DOI)"), Some("win.open-link"));
         s3.append(Some("Edit BibTeX Source"), Some("win.toggle-source"));
         s3.append(Some("Open PDF"), Some("win.open-pdf"));
         s3.append(Some("Duplicate"), Some("win.duplicate"));

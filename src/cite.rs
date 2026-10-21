@@ -125,6 +125,17 @@ impl Styles {
         }
         let r = driver.finish(BibliographyRequest::new(&style, None, &self.locales));
         let mut out = Rendered::default();
+        // glossary items have no bibliographic form; show name and description
+        if !entries.is_empty() && entries.iter().all(|e| e.ty_lower() == "entry") {
+            for e in entries {
+                let (t, h, m) = glossary_item(e);
+                out.citations.push(e.key.clone());
+                out.bib_text.push(t);
+                out.bib_html.push(h);
+                out.bib_markup.push(m);
+            }
+            return Ok(out);
+        }
         for c in &r.citations {
             let mut w = Writer::default();
             w.children(&c.citation);
@@ -315,6 +326,16 @@ impl Writer {
         self.markup.push_str(&esc(t));
         self.markup.push_str(&close_m);
     }
+}
+
+/// Glossary items (@Entry): "Name: description" in plain text, HTML and Pango markup.
+pub fn glossary_item(e: &Entry) -> (String, String, String) {
+    let name = crate::latex::to_plain(&e.get("name").unwrap_or_default());
+    let desc = crate::latex::to_plain(&e.get("description").unwrap_or_default());
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let text = if desc.is_empty() { name.clone() } else { format!("{name}: {desc}") };
+    let html = if desc.is_empty() { format!("<b>{}</b>", esc(&name)) } else { format!("<b>{}</b>: {}", esc(&name), esc(&desc)) };
+    (text, html.clone(), html)
 }
 
 /// Copy fields inherited from a crossref'd parent (biblatex rules, simplified).

@@ -27,6 +27,19 @@ const STOP: &[&str] = &[
 ];
 
 pub fn base_key(e: &Entry, pattern: KeyPattern) -> String {
+    // glossary items: key from the name, e.g. "Dharmaśāstra" → "dharmasastra"
+    if e.ty_lower() == "entry" {
+        let name = fold(&to_plain(&e.get("name").unwrap_or_default()));
+        let mut slug = String::new();
+        for c in name.chars() {
+            if c.is_ascii_alphanumeric() {
+                slug.push(c);
+            } else if !slug.is_empty() && !slug.ends_with('-') {
+                slug.push('-');
+            }
+        }
+        return slug.trim_end_matches('-').chars().take(40).collect::<String>().trim_end_matches('-').to_string();
+    }
     let persons = e.get_nonempty("author").or_else(|| e.get_nonempty("editor")).unwrap_or_default();
     let mut auth = parse_names(&persons)
         .first()
@@ -99,6 +112,8 @@ mod tests {
         assert_eq!(base_key(v[0], KeyPattern::Auth4Year), "sarm-2003");
         assert_eq!(base_key(v[0], KeyPattern::Auth4Title4), "sarm-yoga");
         assert_eq!(base_key(v[1], KeyPattern::Auth4Year), "srav-2007");
+        let g = Library::parse("@Entry{new-entry, name={Mānava Dharmaśāstra}, description={The law code of Manu}}");
+        assert_eq!(base_key(g.entries().next().unwrap(), KeyPattern::Auth4Year), "manava-dharmasastra");
         assert_eq!(unique_key("sarm-2003", |k| k == "sarm-2003" || k == "sarm-2003a"), "sarm-2003b");
         assert_eq!(unique_key("sarm-2003", |_| false), "sarm-2003");
         assert_eq!(unique_key("sarm-2003", |k| k == "sarm-2003"), "sarm-2003a");

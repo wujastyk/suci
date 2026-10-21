@@ -15,7 +15,7 @@ pub const TYPES: &[&str] = &[
     "Book", "Article", "InCollection", "Collection", "InBook", "MvBook", "Online", "Thesis", "Unpublished",
     "Manuscript", "InProceedings", "Proceedings", "Report", "Misc", "Review", "InReference", "Reference",
     "MvCollection", "BookInBook", "Booklet", "Manual", "Periodical", "Audio", "Video", "Software", "Dataset",
-    "PhdThesis", "MastersThesis", "TechReport",
+    "PhdThesis", "MastersThesis", "TechReport", "Entry",
 ];
 
 pub fn type_case(t: &str) -> String {
@@ -48,6 +48,7 @@ pub fn type_display(t: &str) -> String {
         "reference" => "Reference",
         "bookinbook" => "Book in book",
         "www" | "electronic" => "Web",
+        "entry" => "Glossary entry",
         other => return type_case(other),
     }
     .to_string()
@@ -271,6 +272,7 @@ fn build_entry(app: &Rc<App>, root: &gtk::Box, idx: usize) {
 
     let more = gtk::MenuButton::builder().icon_name("view-more-symbolic").tooltip_text("More actions").build();
     let menu = gio::Menu::new();
+    menu.append(Some("Open link (URL / DOI)"), Some("win.open-link"));
     menu.append(Some("Edit BibTeX source (Ctrl+U)"), Some("win.toggle-source"));
     menu.append(Some("Capitalise title (English)"), Some("win.titlecase-sel"));
     menu.append(Some("Shorten DOI (shortDOI)"), Some("win.shorten-doi-sel"));
@@ -612,7 +614,8 @@ fn field_grid(
     let grid = gtk::Grid::builder().column_spacing(10).row_spacing(6).build();
     for (row, name) in fields.iter().enumerate() {
         let lname = name.to_lowercase();
-        let label = gtk::Label::new(Some(&field_label(name)));
+        let label_text = if lname == "citationkey" && e.ty_lower() == "entry" { "Citation key".to_string() } else { field_label(name) };
+        let label = gtk::Label::new(Some(&label_text));
         label.set_xalign(1.0);
         label.set_valign(gtk::Align::Start);
         label.set_margin_top(7);
@@ -629,6 +632,25 @@ fn field_grid(
         }
         grid.attach(&label, 0, row as i32, 1, 1);
 
+        // @Entry glossary items show the citation key as a row; it edits the
+        // entry key itself (like the box at the top), not a field
+        if lname == "citationkey" && e.ty_lower() == "entry" {
+            let cur = app.state.borrow().pending_key.clone().unwrap_or_else(|| e.key.clone());
+            let en = gtk::Entry::builder().text(&cur).hexpand(true).build();
+            en.add_css_class("key-entry");
+            en.set_widget_name("key-entry-row");
+            let me = app.clone();
+            en.connect_changed(move |k| {
+                if let Ok(mut st) = me.state.try_borrow_mut() {
+                    st.pending_key = Some(k.text().to_string());
+                }
+            });
+            let me = app.clone();
+            en.connect_activate(move |_| me.flush());
+            connect_commit(app, en.upcast_ref());
+            grid.attach(&en, 1, row as i32, 1, 1);
+            continue;
+        }
         let mut value = pending_or(app, name, e);
         // ARK is the usual eprint type here; it is saved once an eprint is entered
         if lname == "eprinttype" && value.trim().is_empty() {
@@ -693,7 +715,7 @@ fn field_grid(
         match lname.as_str() {
             "doi" | "isbn" if !value_trim.is_empty() => {
                 if lname == "doi" {
-                    let b = icon_button("web-browser-symbolic", "Open at doi.org");
+                    let b = text_button("Open", "Open this DOI at doi.org in your web browser");
                     let me = app.clone();
                     let d = suci::checks::clean_doi(&value_trim);
                     b.connect_clicked(move |_| me.launch_uri(&format!("https://doi.org/{d}")));
@@ -711,7 +733,7 @@ fn field_grid(
                     });
                     cell.append(&b);
                 }
-                let b = icon_button("folder-download-symbolic", "Fetch data for this identifier and fill in missing fields");
+                let b = text_button("Fetch", "Look up this identifier online and fill in missing fields");
                 let me = app.clone();
                 let v = value_trim.clone();
                 b.connect_clicked(move |_| {
@@ -724,7 +746,7 @@ fn field_grid(
             "eprint" if !value_trim.is_empty() => {
                 let ty = pending_or(app, "eprinttype", e);
                 if let Some(u) = suci::files::eprint_url(&value_trim, &ty) {
-                    let b = icon_button("web-browser-symbolic", &format!("Open {u}"));
+                    let b = text_button("Open", &format!("Open {u} in your web browser"));
                     let me = app.clone();
                     b.connect_clicked(move |_| me.launch_uri(&u));
                     cell.append(&b);
@@ -734,14 +756,14 @@ fn field_grid(
                 en_placeholder(&input, "ark:/13960/…  (or paste an n2t.net / archive.org ARK link)");
             }
             "url" if !value_trim.is_empty() => {
-                let b = icon_button("web-browser-symbolic", "Open in browser");
+                let u = clean_url(&value_trim);
+                let b = text_button("Open", &format!("Open {u} in your web browser"));
                 let me = app.clone();
-                let u = value_trim.replace("\\&", "&").replace("\\_", "_").replace("\\%", "%");
                 b.connect_clicked(move |_| me.launch_uri(&u));
                 cell.append(&b);
             }
             "crossref" if !value_trim.is_empty() => {
-                let b = icon_button("go-jump-symbolic", "Go to the cross-referenced entry");
+                let b = text_button("Go to", "Show the cross-referenced entry");
                 let me = app.clone();
                 let k = value_trim.clone();
                 b.connect_clicked(move |_| {
@@ -803,6 +825,17 @@ fn en_placeholder(w: &gtk::Widget, text: &str) {
     }
 }
 
+fn text_button(label: &str, tip: &str) -> gtk::Button {
+    let b = gtk::Button::builder().label(label).tooltip_text(tip).valign(gtk::Align::Start).build();
+    b
+}
+
+/// URL as stored in BibTeX → URL for the browser (undo \& \_ \% \# escapes).
+pub fn clean_url(u: &str) -> String {
+    u.trim().replace("\\&", "&").replace("\\_", "_").replace("\\%", "%").replace("\\#", "#").replace("\\~", "~")
+}
+
+#[allow(dead_code)]
 fn icon_button(icon: &str, tip: &str) -> gtk::Button {
     let b = gtk::Button::builder().icon_name(icon).tooltip_text(tip).valign(gtk::Align::Start).build();
     b.add_css_class("flat");
@@ -992,6 +1025,14 @@ pub fn refresh_header(app: &Rc<App>) {
     if let Some(root) = app.w.editor_scroller.child() {
         let mut stack = vec![root];
         while let Some(w) = stack.pop() {
+            if w.widget_name() == "key-entry-row" {
+                if let Some(en) = w.downcast_ref::<gtk::Entry>() {
+                    if en.text() != key && !en.state_flags().contains(gtk::StateFlags::FOCUS_WITHIN) {
+                        en.set_text(&key);
+                        app.state.borrow_mut().pending_key = None;
+                    }
+                }
+            }
             if w.widget_name() == "key-entry" {
                 if let Some(en) = w.downcast_ref::<gtk::Entry>() {
                     if en.text() != key && !en.state_flags().contains(gtk::StateFlags::FOCUS_WITHIN) {

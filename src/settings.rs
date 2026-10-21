@@ -84,6 +84,6 @@ impl Settings {
         self.last_file = Some(p.clone());
         self.recent_files.retain(|x| *x != p);
         self.recent_files.insert(0, p);
-        self.recent_files.truncate(8);
+        self.recent_files.truncate(10);
     }
 }

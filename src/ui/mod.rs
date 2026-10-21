@@ -84,6 +84,7 @@ pub struct Widgets {
     pub toast_button: gtk::Button,
     pub stack: gtk::Stack,
     pub save_btn: gtk::Button,
+    pub recent_btn: gtk::MenuButton,
 }
 
 pub struct App {
@@ -288,6 +289,7 @@ impl App {
                 toast_button,
                 stack,
                 save_btn,
+                recent_btn: recent_btn.clone(),
             },
             bound: RefCell::new(HashMap::new()),
             toast_action: RefCell::new(None),
@@ -299,7 +301,7 @@ impl App {
         app_rc.setup_actions(app);
         app_rc.setup_signals(&new_btn, &recent_btn, &paned, &toast_close);
         app_rc.setup_list_context_menu();
-        app_rc.update_recent_menu(&recent_btn);
+        app_rc.update_recent_menu();
 
         window.present();
 
@@ -350,6 +352,7 @@ impl App {
         add("open-pdf", Box::new(|a| a.open_first_pdf()));
         add("duplicate", Box::new(|a| a.duplicate_selected()));
         add("titlecase-sel", Box::new(|a| a.titlecase_selected()));
+        add("open-link", Box::new(|a| a.open_link()));
         add("titlecase-all", Box::new(|a| a.titlecase_library()));
         add("shorten-doi-sel", Box::new(|a| a.shorten_selected()));
         let tf = gio::SimpleAction::new("titlecase-field", Some(glib::VariantTy::STRING));
@@ -399,6 +402,7 @@ impl App {
         app.set_accels_for_action("win.copy-key", &["<Primary><Shift>k"]);
         app.set_accels_for_action("win.paste-bibtex", &["<Primary><Shift>v"]);
         app.set_accels_for_action("win.toggle-source", &["<Primary>u"]);
+        app.set_accels_for_action("win.open-link", &["<Primary><Shift>o"]);
     }
 
     fn setup_signals(self: &Rc<Self>, new_btn: &gtk::MenuButton, _recent: &gtk::MenuButton, paned: &gtk::Paned, toast_close: &gtk::Button) {
@@ -577,9 +581,11 @@ impl App {
         pop
     }
 
-    pub fn update_recent_menu(self: &Rc<Self>, btn: &gtk::MenuButton) {
+    /// Rebuild the drop-down list of recent libraries (files that still exist).
+    pub fn update_recent_menu(self: &Rc<Self>) {
+        let btn = self.w.recent_btn.clone();
         let menu = gio::Menu::new();
-        let recent = self.state.borrow().settings.recent_files.clone();
+        let recent: Vec<PathBuf> = self.state.borrow().settings.recent_files.iter().filter(|p| p.exists()).cloned().collect();
         let section = gio::Menu::new();
         for (i, p) in recent.iter().enumerate() {
             let name = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
@@ -618,6 +624,8 @@ impl App {
                     st.pending.clear();
                     st.settings.remember_file(path);
                     st.settings.save();
+                    let me = self.clone();
+                    glib::idle_add_local_once(move || me.update_recent_menu());
                     if errors > 0 {
                         drop(st);
                         self.toast(&format!("{errors} part(s) of the file could not be read and are kept unchanged — see Check"), None);
@@ -684,6 +692,8 @@ impl App {
                             let mut st = me.state.borrow_mut();
                             st.settings.remember_file(&p);
                             st.settings.save();
+                            let me2 = me.clone();
+                            glib::idle_add_local_once(move || me2.update_recent_menu());
                             let dir = st.settings.file_directory.clone();
                             st.doc.refresh_file_dirs(Some(&dir));
                             drop(st);
@@ -1025,7 +1035,7 @@ impl App {
             // provisional keys get replaced once there is enough data
             if e.key.starts_with("new-") || e.key.is_empty() {
                 let k = st.doc.generate_key(&e, Some(idx));
-                if !k.starts_with('-') && !k.ends_with('-') {
+                if !k.is_empty() && !k.starts_with('-') && !k.ends_with('-') {
                     e.set_key(&k);
                 }
             }
@@ -1174,6 +1184,27 @@ impl App {
         match path {
             Some(p) => self.launch_file(&p),
             None => self.toast("No linked file found for this entry", None),
+        }
+    }
+
+    /// Open the entry's URL; failing that its DOI, then its eprint.
+    fn open_link(self: &Rc<Self>) {
+        self.flush();
+        let link = {
+            let st = self.state.borrow();
+            st.current.and_then(|i| st.doc.entry(i)).and_then(|e| {
+                e.get_nonempty("url")
+                    .map(|u| editor::clean_url(&u))
+                    .or_else(|| e.get_nonempty("doi").map(|d| format!("https://doi.org/{}", suci::checks::clean_doi(&d))))
+                    .or_else(|| {
+                        e.get_nonempty("eprint")
+                            .and_then(|ep| suci::files::eprint_url(&ep, &e.get("eprinttype").unwrap_or_default()))
+                    })
+            })
+        };
+        match link {
+            Some(u) => self.launch_uri(&u),
+            None => self.toast("This entry has no URL, DOI or eprint", None),
         }
     }
 

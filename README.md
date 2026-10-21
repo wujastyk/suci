@@ -28,6 +28,8 @@ citation styles used in the humanities.
 - **Eprints / ARKs**: *Eprint* and *Eprint type* are offered on every entry; the type defaults to `ark` and is saved as soon as an eprint is entered. A pasted resolver link (`https://n2t.net/ark:/13960/…`) is stored as `ark:/13960/…`, and a button opens it in the browser.
 - **Short DOIs**: the *Shorten* button beside a DOI (or right-click → *Shorten DOI*, for any number of selected entries) replaces it by its [shortDOI](https://shortdoi.org) such as `10/hbph7k`. A Preferences option stores new entries' DOIs in short form. Short DOIs can also be pasted into the *Add from DOI* box.
 - **English title capitalisation** (headline style, after Chicago): right-click an entry (or a title field) → *Capitalise Titles*, or Menu → *Titles* for the whole library with a preview first. It only ever raises first letters (McGill, iPhone, al-Bīrūnī stay as written), lowers articles, conjunctions and short prepositions, keeps anything in braces or LaTeX commands (`\emph{…}`, `\dev{…}`, `\textbengali{…}`) as is, and respects lowercase Sanskrit terms and compounds (*Nyāya-vaiśeṣika*, *bhojya-*) in already-capitalised titles. Library-wide and automatic use (a Preferences option) skips entries whose `langid`/`language` is not English, titles in Devanagari, Bengali etc., and untagged titles that don't look English. A separate option capitalises only in formatted citations, without changing the data.
+- **Open links**: an *Open* button beside the URL, DOI and eprint fields, and *Open Link* (Ctrl+Shift+O, or right-click) opens the entry's URL, or failing that its DOI or eprint, in the web browser.
+- **Glossary items** (`@Entry`, as used by bib2gls): the editor shows just *Description*, *Name* and *Citation key*; the list shows the name, and the citation panel shows “Name: description”.
 - **Linked PDFs**: open with Ctrl+P, attach with a button or by dropping a file on the editor. Relative links are resolved against JabRef's own PDF folder (read from JabRef's settings), the folder set in Preferences, and the `.bib` file's folder.
 - **Integrity check** (F7): missing required fields (biblatex rules, crossref-aware), duplicate keys, duplicate DOIs/ISBNs, ISBN/ISSN check digits, malformed DOIs and dates, single-hyphen page ranges, HTML left over from web imports, LaTeX accents that could be Unicode, missing PDF files. Many problems have a one-click fix; “Fix all shown” applies them as a single undo step.
 - **Diacritics**: convert LaTeX accents (`{\=a}`, `\d{r}`) to Unicode and back, per entry or for the whole library, leaving other LaTeX (`\emph`, `\cite`) untouched.
@@ -52,7 +54,7 @@ anywhere, and start **Suci.bat**.
 
 **macOS:** build it yourself, see below. It takes about ten minutes, mostly waiting.
 
-Sūcī reopens the last library on the next start.
+Sūcī reopens the last library on the next start; the ▾ beside the Open button lists the last ten.
 
 ## Build from source
 
