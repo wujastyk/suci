@@ -86,7 +86,28 @@ fn agent() -> ureq::Agent {
         .into()
 }
 
-fn get(url: &str, accept: &str) -> Result<String, String> {
+fn http_error(e: ureq::Error) -> String {
+    match e {
+        ureq::Error::StatusCode(404) => "not found".to_string(),
+        ureq::Error::StatusCode(c) => format!("server returned error {c}"),
+        ureq::Error::Timeout(_) => "timed out".to_string(),
+        other => format!("network error: {other}"),
+    }
+}
+
+/// Download a file as bytes (no overall time limit, for large files). Blocking.
+pub(crate) fn get_bytes(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(20)))
+        .timeout_recv_body(Some(Duration::from_secs(60)))
+        .user_agent(concat!("Suci/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .into();
+    let mut resp = agent.get(url).call().map_err(http_error)?;
+    resp.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| format!("download failed: {e}"))
+}
+
+pub(crate) fn get(url: &str, accept: &str) -> Result<String, String> {
     let mut resp = agent().get(url).header("Accept", accept).call().map_err(|e| match e {
         ureq::Error::StatusCode(404) => "not found".to_string(),
         ureq::Error::StatusCode(c) => format!("server returned error {c}"),

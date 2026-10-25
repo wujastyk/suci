@@ -36,6 +36,7 @@ citation styles used in the humanities.
 - **Diacritics**: convert LaTeX accents (`{\=a}`, `\d{r}`) to Unicode and back, per entry or for the whole library, leaving other LaTeX (`\emph`, `\cite`) untouched.
 - **Sanskrit sort order** (menu → Sort Order): a ā i ī u ū ṛ ṝ ḷ e ai o au ṃ ḥ k kh … ś ṣ s h. The default alphabetical order puts ā right after a and ś right after s.
 - **Citation keys** in your existing pattern (`wuja-2022`, or `wuja-scie`), with diacritics removed. If the key is taken, the letter after the highest one in use is added (`wuja-2022`, `wuja-2022a`, `wuja-2022c` exist → `wuja-2022d`), so a letter once used for another work is never reused. New entries get a key as soon as author and year are filled in.
+- **Check for Updates…** (menu): asks GitHub for the latest release and shows what's new. On Linux, *Download and Install* fetches the new `.deb` and opens it in the package installer; on Windows, *Download* saves the new `.zip`.
 - Undo/redo for every change, keyboard shortcuts throughout (F1 lists them).
 
 Not (yet) included: JabRef groups, full-text PDF search, Word/LibreOffice integration (by design).

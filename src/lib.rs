@@ -12,3 +12,4 @@ pub mod fetch;
 pub mod settings;
 pub mod doc;
 pub mod titlecase;
+pub mod update;

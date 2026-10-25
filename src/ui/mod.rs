@@ -353,6 +353,7 @@ impl App {
         add("to-unicode-all", Box::new(|a| a.convert_all_to_unicode()));
         add("shortcuts", Box::new(|a| dialogs::show_shortcuts(a)));
         add("about", Box::new(|a| dialogs::show_about(a)));
+        add("check-updates", Box::new(|a| dialogs::check_updates(a)));
         add("open-pdf", Box::new(|a| a.open_first_pdf()));
         add("duplicate", Box::new(|a| a.duplicate_selected()));
         add("titlecase-sel", Box::new(|a| a.titlecase_selected()));
@@ -1435,6 +1436,7 @@ fn main_menu() -> gio::Menu {
     misc.append(Some("Check Library…"), Some("win.check"));
     misc.append(Some("Preferences"), Some("win.prefs"));
     misc.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
+    misc.append(Some("Check for Updates…"), Some("win.check-updates"));
     misc.append(Some("About Sūcī"), Some("win.about"));
     menu.append_section(None, &misc);
     menu

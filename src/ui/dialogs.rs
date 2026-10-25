@@ -633,3 +633,163 @@ pub fn show_about(app: &Rc<App>) {
         .build();
     about.present();
 }
+
+// ---------- updates ----------
+
+pub fn check_updates(app: &Rc<App>) {
+    use suci::update;
+    app.toast("Checking for updates…", None);
+    let me = app.clone();
+    glib::spawn_future_local(async move {
+        let res = gio::spawn_blocking(update::latest).await.unwrap_or_else(|_| Err("internal error".into()));
+        me.w.toast_revealer.set_reveal_child(false);
+        let current = env!("CARGO_PKG_VERSION");
+        match res {
+            Err(e) => me.error(
+                "Could not check for updates",
+                &format!("{e}.\n\nYou can look for new versions yourself at\n{}", update::RELEASES_PAGE),
+            ),
+            Ok(rel) if update::is_newer(&rel.version, current) => show_update(&me, rel),
+            Ok(rel) => {
+                let detail = if rel.version == current {
+                    format!("You have version {current}, the latest release (published {}).", rel.date)
+                } else {
+                    format!("You have version {current}. The latest published release is {} ({}).", rel.version, rel.date)
+                };
+                gtk::AlertDialog::builder().modal(true).message("Sūcī is up to date").detail(detail).build().show(Some(&me.w.window));
+            }
+        }
+    });
+}
+
+fn show_update(app: &Rc<App>, rel: suci::update::Release) {
+    let current = env!("CARGO_PKG_VERSION");
+    let win = dialog_window(app, "Update Available", 600, 460);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    outer.set_margin_top(16);
+    outer.set_margin_bottom(14);
+    outer.set_margin_start(16);
+    outer.set_margin_end(16);
+
+    let head = gtk::Label::new(None);
+    head.set_markup(&format!("<span size='large' weight='bold'>Sūcī {} is available</span>", esc(&rel.version)));
+    head.set_xalign(0.0);
+    outer.append(&head);
+    let sub = gtk::Label::new(Some(&format!("You have version {current}. Released {}.", rel.date)));
+    sub.set_xalign(0.0);
+    sub.add_css_class("dim-label");
+    outer.append(&sub);
+
+    if !rel.notes.is_empty() {
+        let what = gtk::Label::new(None);
+        what.set_markup("<b>What’s new</b>");
+        what.set_xalign(0.0);
+        what.set_margin_top(6);
+        outer.append(&what);
+        let notes = gtk::Label::new(Some(&rel.notes));
+        notes.set_wrap(true);
+        notes.set_wrap_mode(pango::WrapMode::WordChar);
+        notes.set_xalign(0.0);
+        notes.set_yalign(0.0);
+        notes.set_margin_start(4);
+        notes.set_margin_end(8);
+        let sc = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).child(&notes).build();
+        outer.append(&sc);
+    } else {
+        let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        spacer.set_vexpand(true);
+        outer.append(&spacer);
+    }
+
+    let how = gtk::Label::new(None);
+    how.set_wrap(true);
+    how.set_xalign(0.0);
+    let is_deb = rel.asset.as_ref().is_some_and(|a| a.name.ends_with(".deb"));
+    let is_zip = rel.asset.as_ref().is_some_and(|a| a.name.ends_with(".zip"));
+    how.set_text(if is_deb {
+        "Download and Install saves the .deb file in your Downloads folder and opens it in the package installer. Afterwards, quit and restart Sūcī."
+    } else if is_zip {
+        "Download saves the new .zip in your Downloads folder. Quit Sūcī, unzip it, and replace your old Suci folder with the new one. Your settings are kept."
+    } else if cfg!(target_os = "macos") {
+        "To update, open Terminal in your suci folder and run:  git pull && cargo build --release  (and packaging/macos/make-app.sh if you use the app)."
+    } else {
+        "Open the release page to download the new version."
+    });
+    outer.append(&how);
+
+    let status = gtk::Label::new(None);
+    status.set_xalign(0.0);
+    status.set_wrap(true);
+    status.set_visible(false);
+    outer.append(&status);
+
+    let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    bar.set_margin_top(6);
+    let page_btn = gtk::Button::with_label("Release Page");
+    {
+        let me = app.clone();
+        let url = rel.page.clone();
+        page_btn.connect_clicked(move |_| me.launch_uri(&url));
+    }
+    bar.append(&page_btn);
+    let fill = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    fill.set_hexpand(true);
+    bar.append(&fill);
+    let spinner = gtk::Spinner::new();
+    bar.append(&spinner);
+    let close = gtk::Button::with_label("Later");
+    {
+        let w = win.clone();
+        close.connect_clicked(move |_| w.close());
+    }
+    bar.append(&close);
+
+    if let Some(asset) = rel.asset.clone() {
+        let btn = gtk::Button::with_label(if is_deb { "Download and Install" } else { "Download" });
+        btn.add_css_class("suggested-action");
+        let me = app.clone();
+        let w = win.clone();
+        let spinner = spinner.clone();
+        let status = status.clone();
+        btn.connect_clicked(move |b| {
+            b.set_sensitive(false);
+            spinner.start();
+            status.set_visible(true);
+            status.set_text(&format!("Downloading {} ({:.1} MB)…", asset.name, asset.size as f64 / 1_048_576.0));
+            let dir = dirs::download_dir().or_else(dirs::home_dir).unwrap_or_else(std::env::temp_dir);
+            let asset = asset.clone();
+            let me = me.clone();
+            let w = w.clone();
+            let b = b.clone();
+            let spinner = spinner.clone();
+            let status = status.clone();
+            glib::spawn_future_local(async move {
+                let res = gio::spawn_blocking(move || suci::update::download(&asset, &dir)).await.unwrap_or_else(|_| Err("internal error".into()));
+                spinner.stop();
+                match res {
+                    Ok(path) => {
+                        if is_deb {
+                            me.launch_file(&path);
+                            me.toast(&format!("Saved {} — the package installer is opening. Restart Sūcī after installing.", path.display()), None);
+                        } else if let Some(folder) = path.parent() {
+                            me.launch_file(folder);
+                            me.toast(&format!("Saved {}", path.display()), None);
+                        }
+                        w.close();
+                    }
+                    Err(e) => {
+                        status.set_text(&format!("Download failed: {e}. Try the release page instead."));
+                        b.set_sensitive(true);
+                    }
+                }
+            });
+        });
+        bar.append(&btn);
+        win.set_default_widget(Some(&btn));
+        let b2 = btn.clone();
+        glib::idle_add_local_once(move || { b2.grab_focus(); });
+    }
+    outer.append(&bar);
+    win.set_child(Some(&outer));
+    win.present();
+}
