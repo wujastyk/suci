@@ -639,10 +639,17 @@ fn build_source(app: &Rc<App>, root: &gtk::Box, e: &Entry) {
     root.append(&frame);
     root.append(&status);
     root.append(&buttons);
-    let tv2 = tv.clone();
-    glib::idle_add_local_once(move || {
-        tv2.grab_focus();
-    });
+    // start at the top, and take the keyboard only if the user just asked for
+    // this view (not when another entry is selected, e.g. while searching)
+    let start = tv.buffer().start_iter();
+    tv.buffer().place_cursor(&start);
+    let take_focus = std::mem::take(&mut app.state.borrow_mut().focus_source);
+    if take_focus {
+        let tv2 = tv.clone();
+        glib::idle_add_local_once(move || {
+            tv2.grab_focus();
+        });
+    }
 }
 
 fn fill_issues(app: &Rc<App>, ib: &gtk::Box, issues: &[suci::checks::Issue]) {

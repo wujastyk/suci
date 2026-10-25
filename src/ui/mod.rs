@@ -64,6 +64,9 @@ pub struct State {
     pub show_source: bool,
     /// The source editor's buffer and the text it was loaded with.
     pub source_buf: Option<(gtk::TextBuffer, String)>,
+    /// Put the cursor in the source editor on its next build (only when the
+    /// user switched to it, never when it is rebuilt for another entry).
+    pub focus_source: bool,
 }
 
 pub struct Widgets {
@@ -270,6 +273,7 @@ impl App {
                 has_file: false,
                 show_source: false,
                 source_buf: None,
+                focus_source: false,
             }),
             w: Widgets {
                 window: window.clone(),
@@ -899,7 +903,11 @@ impl App {
         } else {
             self.flush();
         }
-        self.state.borrow_mut().show_source = on;
+        {
+            let mut st = self.state.borrow_mut();
+            st.show_source = on;
+            st.focus_source = on;
+        }
         editor::rebuild(self);
     }
 
