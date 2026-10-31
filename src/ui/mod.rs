@@ -6,7 +6,7 @@ mod list;
 mod tools;
 
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, gio, glib, pango};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -35,6 +35,7 @@ const CSS: &str = r#"
 .key-entry { font-family: monospace; }
 .placeholder-title { font-size: 1.6em; font-weight: bold; }
 .fetch-entry { min-width: 260px; }
+.lib-dir { font-size: smaller; }
 textview.field-text { padding: 4px; }
 "#;
 
@@ -87,6 +88,8 @@ pub struct Widgets {
     pub toast_button: gtk::Button,
     pub stack: gtk::Stack,
     pub save_btn: gtk::Button,
+    pub lib_name: gtk::Label,
+    pub lib_dir: gtk::Label,
     pub recent_btn: gtk::MenuButton,
 }
 
@@ -139,6 +142,19 @@ impl App {
 
         let new_btn = gtk::MenuButton::builder().icon_name("list-add-symbolic").tooltip_text("New entry (Ctrl+N)").build();
         header.pack_start(&new_btn);
+
+        // name of the open library, with its folder underneath
+        let lib_name = gtk::Label::builder().xalign(0.0).ellipsize(pango::EllipsizeMode::Middle).max_width_chars(36).build();
+        lib_name.add_css_class("lib-name");
+        let lib_dir = gtk::Label::builder().xalign(0.0).ellipsize(pango::EllipsizeMode::Start).max_width_chars(40).build();
+        lib_dir.add_css_class("lib-dir");
+        lib_dir.add_css_class("dim-label");
+        let lib_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        lib_box.set_valign(gtk::Align::Center);
+        lib_box.set_margin_start(10);
+        lib_box.append(&lib_name);
+        lib_box.append(&lib_dir);
+        header.pack_start(&lib_box);
 
         // DOI / ISBN fetch box, front and centre
         let fetch_entry = gtk::Entry::builder()
@@ -293,6 +309,8 @@ impl App {
                 toast_button,
                 stack,
                 save_btn,
+                lib_name,
+                lib_dir,
                 recent_btn: recent_btn.clone(),
             },
             bound: RefCell::new(HashMap::new()),
@@ -788,6 +806,23 @@ impl App {
             .unwrap_or_else(|| "Untitled".into());
         let dirty = st.doc.is_dirty();
         self.w.window.set_title(Some(&format!("{}{} — {}", if dirty { "• " } else { "" }, name, crate::APP_NAME)));
+        let esc = |t: &str| glib::markup_escape_text(t).to_string();
+        self.w.lib_name.set_markup(&if dirty {
+            format!("<b>{}</b>  <span foreground='#c01c28' size='small'>● unsaved</span>", esc(&name))
+        } else {
+            format!("<b>{}</b>", esc(&name))
+        });
+        let full = st.doc.path.as_ref().map(|p| p.display().to_string());
+        let dir = st.doc.path.as_ref().and_then(|p| p.parent()).map(|d| {
+            let d = d.display().to_string();
+            match dirs::home_dir().map(|h| h.display().to_string()) {
+                Some(h) if !h.is_empty() && d.starts_with(&h) => format!("~{}", &d[h.len()..]),
+                _ => d,
+            }
+        });
+        self.w.lib_dir.set_text(dir.as_deref().unwrap_or("not yet saved"));
+        self.w.lib_name.set_tooltip_text(full.as_deref());
+        self.w.lib_dir.set_tooltip_text(full.as_deref());
         if let Some(a) = self.w.window.lookup_action("undo") {
             a.downcast::<gio::SimpleAction>().unwrap().set_enabled(st.doc.can_undo());
         }
@@ -816,19 +851,10 @@ impl App {
         let n = self.w.store.n_items();
         self.w.store.splice(0, n, &refs);
         let shown = items.len();
-        let name = self
-            .state
-            .borrow()
-            .doc
-            .path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Untitled".into());
         self.w.count.set_text(&if q.trim().is_empty() {
-            format!("{name} · {} entries", fmt_num(total))
+            format!("{} entries", fmt_num(total))
         } else {
-            format!("{name} · {} of {}", fmt_num(shown), fmt_num(total))
+            format!("{} of {}", fmt_num(shown), fmt_num(total))
         });
         if let Some(idx) = select {
             self.select_entry(idx);
