@@ -317,6 +317,7 @@ impl App {
         s2.append(Some("LaTeX Accents → Unicode"), Some("win.to-unicode-sel"));
         menu.append_section(None, &s2);
         let s3 = gio::Menu::new();
+        s3.append(Some("Find DOI / ISBN…"), Some("win.find-id"));
         s3.append(Some("Open Link (URL / DOI)"), Some("win.open-link"));
         s3.append(Some("Add Volume…"), Some("win.add-volume"));
         s3.append(Some("Edit BibTeX Source"), Some("win.toggle-source"));

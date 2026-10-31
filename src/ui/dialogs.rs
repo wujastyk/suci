@@ -29,7 +29,12 @@ fn esc(s: &str) -> String {
 /// otherwise offer to add a new entry.
 pub fn start_fetch(app: &Rc<App>, text: &str, merge_into: Option<usize>) {
     let Some(id) = detect(text) else {
-        app.toast("That does not look like a DOI or an ISBN", None);
+        if merge_into.is_none() && text.trim().chars().filter(|c| c.is_alphabetic()).count() >= 3 {
+            super::find::find_from_text(app, text.trim());
+            app.w.fetch_entry.set_text("");
+        } else {
+            app.toast("That does not look like a DOI or an ISBN", None);
+        }
         return;
     };
     if merge_into.is_none() {
@@ -183,6 +188,11 @@ fn show_candidates(app: &Rc<App>, id: &Ident, cands: Vec<Candidate>, errors: Vec
 }
 
 /// Show fetched values next to the entry's own, and let the user choose which to take.
+/// Compare an entry with a record found elsewhere and fill in fields.
+pub fn merge_record(app: &Rc<App>, idx: usize, source: &str, entry: Entry) {
+    show_merge(app, idx, vec![Candidate { source: source.to_string(), entry }]);
+}
+
 fn show_merge(app: &Rc<App>, idx: usize, cands: Vec<Candidate>) {
     let Some(current) = app.state.borrow().doc.entry(idx).cloned() else { return };
     let use_latex = app.state.borrow().settings.fetch_as_latex;
@@ -209,7 +219,10 @@ fn show_merge(app: &Rc<App>, idx: usize, cands: Vec<Candidate>) {
     for f in &cand.fields {
         let newv = f.editor_text();
         let oldv = current.get(&f.name).unwrap_or_default();
-        if newv.trim() == oldv.trim() || newv.trim().is_empty() {
+        let same_names = matches!(f.name.as_str(), "author" | "editor" | "translator")
+            && suci::names::parse_names(&newv).iter().map(|n| (suci::collate::fold(&n.last), suci::collate::fold(&n.first))).collect::<Vec<_>>()
+                == suci::names::parse_names(&oldv).iter().map(|n| (suci::collate::fold(&n.last), suci::collate::fold(&n.first))).collect::<Vec<_>>();
+        if newv.trim() == oldv.trim() || newv.trim().is_empty() || same_names {
             continue;
         }
         let cb = gtk::CheckButton::new();
@@ -514,6 +527,13 @@ pub fn show_preferences(app: &Rc<App>) {
         Some("Capitalise English titles in copied references without changing the stored data (same language rules)."),
     );
 
+    let oa_key = gtk::Entry::builder().text(&st.settings.openalex_key).placeholder_text("(none; optional)").build();
+    add(
+        "OpenAlex API key",
+        oa_key.upcast_ref(),
+        Some("Find DOI / ISBN asks OpenAlex where open-access copies are. Without a key there is a free daily allowance per network; a free key from openalex.org (sign up with your email) gives you your own."),
+    );
+
     let sd = gtk::Switch::builder().active(st.settings.short_dois).halign(gtk::Align::Start).build();
     add("Store short DOIs", sd.upcast_ref(), Some("When adding an entry with a DOI, replace it by its shortDOI from shortdoi.org (e.g. 10/hbph7k)."));
 
@@ -567,6 +587,7 @@ pub fn show_preferences(app: &Rc<App>) {
             st.settings.style_title_case = tc.is_active();
             st.settings.auto_title_case = atc.is_active();
             st.settings.short_dois = sd.is_active();
+            st.settings.openalex_key = oa_key.text().trim().to_string();
             let s = st.settings.clone();
             st.doc.track_modification_date = s.track_modification_date;
             st.doc.key_pattern = s.key_pattern;
@@ -590,7 +611,8 @@ pub fn show_shortcuts(app: &Rc<App>) {
     let items = [
         ("Ctrl+F", "Search"),
         ("↓ in search", "Jump into the list"),
-        ("Ctrl+L", "Add from DOI / ISBN"),
+        ("Ctrl+L", "Add from DOI / ISBN, or search by title"),
+        ("Ctrl+I", "Find DOI / ISBN (and a free copy) for the selected entry"),
         ("Ctrl+N", "New entry"),
         ("Ctrl+Shift+V", "Paste BibTeX (or a DOI/ISBN) from clipboard"),
         ("Ctrl+C (in list)", "Copy formatted reference(s)"),

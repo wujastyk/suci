@@ -78,8 +78,15 @@ pub struct Candidate {
     pub entry: Entry,
 }
 
+/// Trust the certificates of the computer itself (system store / keychain),
+/// so lookups also work behind institutional proxies that inspect traffic.
+fn tls() -> ureq::tls::TlsConfig {
+    ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build()
+}
+
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
+        .tls_config(tls())
         .timeout_global(Some(Duration::from_secs(20)))
         .user_agent(concat!("Suci/", env!("CARGO_PKG_VERSION"), " (bibliography manager; https://github.com)"))
         .build()
@@ -96,8 +103,14 @@ fn http_error(e: ureq::Error) -> String {
 }
 
 /// Download a file as bytes (no overall time limit, for large files). Blocking.
+/// Download a file (e.g. an open-access PDF). Blocking.
+pub fn download_bytes(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+    get_bytes(url, limit)
+}
+
 pub(crate) fn get_bytes(url: &str, limit: u64) -> Result<Vec<u8>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
+        .tls_config(tls())
         .timeout_connect(Some(Duration::from_secs(20)))
         .timeout_recv_body(Some(Duration::from_secs(60)))
         .user_agent(concat!("Suci/", env!("CARGO_PKG_VERSION")))
@@ -117,7 +130,7 @@ pub(crate) fn get(url: &str, accept: &str) -> Result<String, String> {
     resp.body_mut().with_config().limit(20 * 1024 * 1024).read_to_string().map_err(|e| format!("could not read response: {e}"))
 }
 
-fn enc(s: &str) -> String {
+pub(crate) fn enc(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
@@ -266,7 +279,7 @@ fn fetch_full(id: &Ident) -> (Vec<Candidate>, Vec<String>) {
 // ---------- helpers ----------
 
 /// Escape characters that are special in BibTeX values.
-fn tex(s: &str) -> String {
+pub(crate) fn tex(s: &str) -> String {
     let s: String = s.nfc().collect();
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -331,7 +344,7 @@ fn isbd(s: &str) -> String {
 }
 
 /// "Hock, Hans Henrich" → "Hans Henrich Hock" (the form used in this library).
-fn person(s: &str) -> String {
+pub(crate) fn person(s: &str) -> String {
     let s = isbd(s);
     let s = s.trim_end_matches(',').trim();
     if s.contains(',') {
@@ -342,7 +355,7 @@ fn person(s: &str) -> String {
     }
 }
 
-fn year_in(s: &str) -> Option<String> {
+pub(crate) fn year_in(s: &str) -> Option<String> {
     let b = s.as_bytes();
     for i in 0..b.len().saturating_sub(3) {
         if b[i..i + 4].iter().all(|c| c.is_ascii_digit())
@@ -355,14 +368,14 @@ fn year_in(s: &str) -> Option<String> {
     None
 }
 
-fn set(e: &mut Entry, f: &str, v: &str) {
+pub(crate) fn set(e: &mut Entry, f: &str, v: &str) {
     let v = v.trim();
     if !v.is_empty() {
         e.fields.push(Field::new(f, v));
     }
 }
 
-fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
+pub(crate) fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
     let mut cur = v;
     for p in path {
         cur = cur.get(p)?;
@@ -370,7 +383,7 @@ fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
     cur.as_str()
 }
 
-fn first_str(v: &Value, key: &str) -> Option<String> {
+pub(crate) fn first_str(v: &Value, key: &str) -> Option<String> {
     match v.get(key)? {
         Value::String(s) => Some(s.clone()),
         Value::Array(a) => a.iter().find_map(|x| x.as_str()).map(|s| s.to_string()),
@@ -513,7 +526,7 @@ pub fn parse_crossref(body: &str) -> Result<Entry, String> {
     Ok(e)
 }
 
-fn langid(code: &str) -> Option<&'static str> {
+pub(crate) fn langid(code: &str) -> Option<&'static str> {
     Some(match code.get(..2)?.to_lowercase().as_str() {
         "en" => "english",
         "de" => "german",
@@ -668,14 +681,14 @@ pub fn parse_google_books(body: &str) -> Result<Vec<Entry>, String> {
 // ---------- MARC 21 XML (K10plus / GVK SRU) ----------
 
 #[derive(Debug, Default, Clone)]
-struct MarcField {
-    tag: String,
+pub(crate) struct MarcField {
+    pub(crate) tag: String,
     ind2: String,
     subs: Vec<(char, String)>,
 }
 
 impl MarcField {
-    fn sub(&self, c: char) -> Option<&str> {
+    pub(crate) fn sub(&self, c: char) -> Option<&str> {
         self.subs.iter().find(|(k, _)| *k == c).map(|(_, v)| v.as_str())
     }
     fn subs_of(&self, c: char) -> Vec<&str> {
@@ -746,7 +759,7 @@ fn xml_attr(tag: &str, name: &str) -> Option<String> {
 }
 
 /// Minimal MARC-XML reader: returns (001 control number, data fields) per record.
-fn marc_records(xml: &str) -> Result<Vec<(Option<String>, Vec<MarcField>)>, String> {
+pub(crate) fn marc_records(xml: &str) -> Result<Vec<(Option<String>, Vec<MarcField>)>, String> {
     let mut records = Vec::new();
     let mut cur: Option<(Option<String>, Vec<MarcField>)> = None;
     let mut field: Option<MarcField> = None;
@@ -817,9 +830,12 @@ fn marc_records(xml: &str) -> Result<Vec<(Option<String>, Vec<MarcField>)>, Stri
 }
 
 pub fn parse_marcxml(xml: &str) -> Result<Vec<Entry>, String> {
-    let mut out = Vec::new();
-    for (ppn, fields) in marc_records(xml)? {
-        let fields = &fields;
+    Ok(marc_records(xml)?.into_iter().filter_map(|(ppn, fields)| marc_entry(ppn, &fields)).collect())
+}
+
+/// One MARC record as a biblatex entry (None if it has no title).
+pub(crate) fn marc_entry(ppn: Option<String>, fields: &[MarcField]) -> Option<Entry> {
+    {
         fn by_tag<'a>(fields: &'a [MarcField], tag: &'static str) -> impl Iterator<Item = &'a MarcField> + 'a {
             fields.iter().filter(move |f| f.tag == tag)
         }
@@ -923,11 +939,8 @@ pub fn parse_marcxml(xml: &str) -> Result<Vec<Entry>, String> {
         if let Some(p) = ppn {
             set(&mut e, "ppn_gvk", &p);
         }
-        if e.get_nonempty("title").is_some() {
-            out.push(e);
-        }
+        if e.get_nonempty("title").is_some() { Some(e) } else { None }
     }
-    Ok(out)
 }
 
 /// Turn a fetched entry into one ready for the library.

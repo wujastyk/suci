@@ -928,6 +928,12 @@ fn field_grid(
                 });
                 cell.append(&b);
             }
+            "doi" | "isbn" if lname == "doi" || suci::lookup::Kind::for_entry_type(&e.ty) == suci::lookup::Kind::Book => {
+                let b = text_button("Find…", "Search for this work's DOI or ISBN by its title, author and year (Ctrl+I)");
+                let me = app.clone();
+                b.connect_clicked(move |_| super::find::find_for_selected(&me));
+                cell.append(&b);
+            }
             "eprint" if !value_trim.is_empty() => {
                 let ty = pending_or(app, "eprinttype", e);
                 if let Some(u) = suci::files::eprint_url(&value_trim, &ty) {

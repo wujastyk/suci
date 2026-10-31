@@ -2,6 +2,7 @@
 
 mod dialogs;
 mod editor;
+mod find;
 mod list;
 mod tools;
 
@@ -158,8 +159,8 @@ impl App {
 
         // DOI / ISBN fetch box, front and centre
         let fetch_entry = gtk::Entry::builder()
-            .placeholder_text("Add from DOI or ISBN…")
-            .tooltip_text("Paste a DOI (10.xxxx/…, doi.org link) or an ISBN and press Enter (Ctrl+L)")
+            .placeholder_text("Add from DOI, ISBN or title…")
+            .tooltip_text("Paste a DOI (10.xxxx/…, doi.org link) or an ISBN and press Enter, or type a title (and year) to search for it (Ctrl+L)")
             .primary_icon_name("list-add-symbolic")
             .build();
         fetch_entry.add_css_class("fetch-entry");
@@ -379,6 +380,7 @@ impl App {
         add("add-volume", Box::new(|a| a.add_volume()));
         add("titlecase-all", Box::new(|a| a.titlecase_library()));
         add("shorten-doi-sel", Box::new(|a| a.shorten_selected()));
+        add("find-id", Box::new(|a| find::find_for_selected(a)));
         let tf = gio::SimpleAction::new("titlecase-field", Some(glib::VariantTy::STRING));
         let me = self.clone();
         tf.connect_activate(move |_, v| {
@@ -427,6 +429,7 @@ impl App {
         app.set_accels_for_action("win.paste-bibtex", &["<Primary><Shift>v"]);
         app.set_accels_for_action("win.toggle-source", &["<Primary>u"]);
         app.set_accels_for_action("win.open-link", &["<Primary><Shift>o"]);
+        app.set_accels_for_action("win.find-id", &["<Primary>i"]);
     }
 
     fn setup_signals(self: &Rc<Self>, new_btn: &gtk::MenuButton, _recent: &gtk::MenuButton, paned: &gtk::Paned, toast_close: &gtk::Button) {
@@ -1375,6 +1378,12 @@ impl App {
     // ---------- feedback ----------
 
     pub fn toast(&self, msg: &str, action: Option<Box<dyn Fn()>>) {
+        self.toast_labelled(msg, "Undo", action);
+    }
+
+    /// A toast whose button says something other than "Undo".
+    pub fn toast_labelled(&self, msg: &str, button: &str, action: Option<Box<dyn Fn()>>) {
+        self.w.toast_button.set_label(button);
         self.w.toast_label.set_text(msg);
         self.w.toast_button.set_visible(action.is_some());
         *self.toast_action.borrow_mut() = action;
@@ -1435,6 +1444,7 @@ fn main_menu() -> gio::Menu {
 
     let edit = gio::Menu::new();
     edit.append(Some("Paste BibTeX from Clipboard"), Some("win.paste-bibtex"));
+    edit.append(Some("Find DOI / ISBN by Title…"), Some("win.find-id"));
     edit.append(Some("Duplicate Entry"), Some("win.duplicate"));
     edit.append(Some("Copy BibTeX of Selection"), Some("win.copy-bibtex"));
     edit.append(Some("Copy \\cite{…} of Selection"), Some("win.copy-latex"));

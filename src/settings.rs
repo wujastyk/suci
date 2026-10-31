@@ -31,6 +31,8 @@ pub struct Settings {
     /// Owner name written to new entries (JabRef's `owner` field); empty = none.
     pub owner: String,
     pub font_scale: f64,
+    /// Optional OpenAlex API key (free), used when looking up DOIs by title.
+    pub openalex_key: String,
 }
 
 impl Default for Settings {
@@ -52,6 +54,7 @@ impl Default for Settings {
             pane_position: 800,
             owner: String::new(),
             font_scale: 1.0,
+            openalex_key: String::new(),
         }
     }
 }

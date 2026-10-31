@@ -13,3 +13,4 @@ pub mod settings;
 pub mod doc;
 pub mod titlecase;
 pub mod update;
+pub mod lookup;
