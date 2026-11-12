@@ -310,6 +310,7 @@ impl App {
         s1.append(Some("Copy Citation"), Some("win.copy-cite"));
         s1.append(Some("Copy Key"), Some("win.copy-key"));
         s1.append(Some("Copy BibTeX"), Some("win.copy-bibtex"));
+        s1.append_submenu(Some("Copy to Library"), &self.w.copy_to_menu);
         menu.append_section(None, &s1);
         let s2 = gio::Menu::new();
         s2.append(Some("Capitalise Titles (English)"), Some("win.titlecase-sel"));

@@ -1,6 +1,7 @@
 //! GTK 4 interface.
 
 mod dialogs;
+mod copyto;
 mod editor;
 mod find;
 mod list;
@@ -90,6 +91,8 @@ pub struct Widgets {
     pub stack: gtk::Stack,
     pub save_btn: gtk::Button,
     pub lib_name: gtk::Label,
+    /// right-click → Copy to Library (filled from the recent files)
+    pub copy_to_menu: gio::Menu,
     pub lib_dir: gtk::Label,
     pub recent_btn: gtk::MenuButton,
 }
@@ -311,6 +314,7 @@ impl App {
                 stack,
                 save_btn,
                 lib_name,
+                copy_to_menu: gio::Menu::new(),
                 lib_dir,
                 recent_btn: recent_btn.clone(),
             },
@@ -381,6 +385,17 @@ impl App {
         add("titlecase-all", Box::new(|a| a.titlecase_library()));
         add("shorten-doi-sel", Box::new(|a| a.shorten_selected()));
         add("find-id", Box::new(|a| find::find_for_selected(a)));
+        add("copy-to-other", Box::new(|a| copyto::choose_other(a)));
+        {
+            let a = gio::SimpleAction::new("copy-to", Some(glib::VariantTy::STRING));
+            let me = self.clone();
+            a.connect_activate(move |_, p| {
+                if let Some(path) = p.and_then(|v| v.get::<String>()) {
+                    copyto::copy_to(&me, std::path::Path::new(&path));
+                }
+            });
+            win.add_action(&a);
+        }
         let tf = gio::SimpleAction::new("titlecase-field", Some(glib::VariantTy::STRING));
         let me = self.clone();
         tf.connect_activate(move |_, v| {
@@ -630,6 +645,7 @@ impl App {
         }
         menu.append_section(None, &section);
         btn.set_menu_model(Some(&menu));
+        copyto::update_menu(self);
     }
 
     // ---------- file handling ----------
