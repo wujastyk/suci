@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="{{ page.lang | default: site.lang | default: 'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% seo %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Serif+Devanagari:wght@400;500&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+  <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav wrap" aria-label="Main">
+      <a class="brand" href="{{ '/' | relative_url }}">
+        <span class="brand-name">{{ site.title }}</span>
+        <span class="brand-deva" lang="sa">सूची</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="{{ '/' | relative_url }}"{% if page.url == '/' %} aria-current="page"{% endif %}>Overview</a></li>
+        <li><a href="{{ '/#install' | relative_url }}">Install</a></li>
+        <li><a href="{{ '/BUILDING.html' | relative_url }}"{% if page.url contains 'BUILDING' %} aria-current="page"{% endif %}>Building</a></li>
+        <li><a href="https://github.com/wujastyk/suci/releases">Releases</a></li>
+        <li><a href="https://github.com/wujastyk/suci">GitHub</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="band" aria-hidden="true"></div>
+
+  <main id="content" class="wrap">
+    <article class="prose">
+      {{ content }}
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div>
+        <p class="footer-label">Sūcī</p>
+        <p>Source code and releases:
+          <a href="https://github.com/wujastyk/suci">github.com/wujastyk/suci</a>.</p>
+      </div>
+      <div>
+        <p class="footer-label">Licence</p>
+        <p>© Dominik Wujastyk. Program under the MIT licence; bundled citation styles CC BY-SA 3.0.
+          Published with <a href="https://pages.github.com">GitHub Pages</a>.</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

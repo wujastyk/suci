@@ -1,0 +1,19 @@
+# GitHub Pages settings for wujastyk.github.io/suci
+# The web page is README.md (and BUILDING.md), shown with _layouts/default.html
+# and assets/css/site.css, in the style of the Suśruta Project websites.
+title: Sūcī
+description: A fast BibTeX / biblatex manager for Linux, macOS and Windows
+lang: en
+
+plugins:
+  - jekyll-seo-tag
+
+# Program sources: not part of the website
+exclude:
+  - src
+  - packaging
+  - styles
+  - target
+  - Cargo.toml
+  - Cargo.lock
+  - LICENSE
