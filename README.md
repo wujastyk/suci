@@ -1,15 +1,17 @@
-# Sūcī — a fast BibTeX / biblatex manager
+# Sūcī — a fast BibTeX / BibLaTeX manager
 
 *Sūcī* (Skt. सूची, “list, index”; also “needle”) is a bibliography manager for
-Linux, macOS and Windows, written in Rust and GTK 4. It reads and writes the same `.bib` files as
-JabRef, so you can switch between the two freely.
+Linux, macOS and Windows, written in Rust and GTK 4. It reads and writes the same `.bib` files as JabRef, so you can switch between the two freely.  The underlying format of the file that Sūcī reads and writes is plain text with 
+entries in the [BibTeX format](https://www.bibtex.org/Format/).  You can edit it with any text editor, if you need to.
+
+BibTeX is the bibliography system that was created to work with [LaTeX](https://www.latex-project.org/).  It is so simple and easy to work with that it has become a general standard, supported by many online services and other bibliography programs, so it can be useful even if you don’t use LaTeX. 
 
 It was written for humanities work on South Asia: IAST diacritics, Sanskrit
 alphabetical order, union-catalogue lookup for Indian and European books, and
 citation styles used in the humanities.
 
 
-<img width="1929" height="1073" alt="image" src="https://github.com/user-attachments/assets/18e7cf31-81b5-460b-8e83-b135da75a0ce" />
+<img alt="screenshot" src="https://github.com/user-attachments/assets/18e7cf31-81b5-460b-8e83-b135da75a0ce" />
 
 
 
