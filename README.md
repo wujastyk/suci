@@ -6,14 +6,9 @@ entries in the [BibTeX format](https://www.bibtex.org/Format/).  You can edit it
 
 BibTeX is the bibliography system that was created to work with [LaTeX](https://www.latex-project.org/).  It is so simple and easy to work with that it has become a general standard, supported by many online services and other bibliography programs, so it can be useful even if you don’t use LaTeX. 
 
-It was written for humanities work on South Asia: IAST diacritics, Sanskrit
-alphabetical order, union-catalogue lookup for Indian and European books, and
-citation styles used in the humanities.
-
+Sūcī was designed specifically for humanities work on South Asia: IAST diacritics, Sanskrit alphabetical order, union-catalogue lookup for Indian and European books, easy handling of ARK references to Archive.org, and citation styles used in the humanities.
 
 <img alt="screenshot" src="https://github.com/user-attachments/assets/18e7cf31-81b5-460b-8e83-b135da75a0ce" />
-
-
 
 ## What it does
 
@@ -43,7 +38,7 @@ citation styles used in the humanities.
 - **Check for Updates…** (menu): asks GitHub for the latest release and shows what's new. On Linux, *Download and Install* fetches the new `.deb` and opens it in the package installer; on Windows, *Download* saves the new `.zip`.
 - Undo/redo for every change, keyboard shortcuts throughout (F1 lists them).
 
-Not (yet) included: JabRef groups, full-text PDF search, Word/LibreOffice integration (by design).
+Not (yet) included: JabRef-style groups, full-text PDF search, Word/LibreOffice integration (by design).
 
 ## Github repository
 
